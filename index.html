@@ -158,10 +158,10 @@
     #powerFill {
       height: 100%;
       width: 0%;
-      background: linear-gradient(90deg, #4488cc, #66aadd, #88ccff, #aaeeff, #ffffff);
+      background: linear-gradient(90deg, #2a5a7a, #3a7a9a, #4a9aba, #6abadb, #8adaff);
       border-radius: 3px;
       transition: width 0.1s;
-      box-shadow: 0 0 15px rgba(100,200,255,0.6);
+      box-shadow: 0 0 15px rgba(60,140,180,0.6);
     }
   </style>
 </head>
@@ -181,9 +181,8 @@
 
 <div id="tips">
   <span class="fire">☝️ Point</span> = Fire Portal &nbsp;|&nbsp;
-  <span class="fire">🖐️ Palm</span> = Fire Shield &nbsp;|&nbsp;
-  <span>🤲 Two Hands</span> = 🌬️ Air Wave &nbsp;|&nbsp;
-  <span class="fire">✊ Fist</span> = Blast
+  <span class="fire">🖐️🖐️ Both Palms</span> = Fire Shields + Red Eyes &nbsp;|&nbsp;
+  <span>☝️☝️ Both Point</span> = 🌊 Water Wave → Throw = 💥 Blast
 </div>
 
 <video id="cam" playsinline></video>
@@ -323,7 +322,6 @@ const CONFIG = {
 };
 
 const RUNES = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟᚪᚫᚣᛠ';
-const SYMBOLS = '⍟⎈⌬⏣⎔⏢⌖⍜⎊⏥◈◇△▽⬡⬢✧⚝☉☽♄♃♂☿♀⚹✴❋';
 const SACRED = '☯☸✡⚛⚕♾∞◎⊕⊗⊙◉⦿⊚⊛⊜⊝';
 
 // === SETUP ===
@@ -361,13 +359,15 @@ let sparks = [];
 let embers = [];
 let portals = [];
 let lightnings = [];
-let eyeEmbers = [];
+let shockwaves = [];
 
 let flash = 0, shake = 0;
 let pullState = { active: false, distance: 0, energy: 0, peakEnergy: 0, wasActive: false };
-let targetEyeIntensity = 0;
 let leftShieldActive = false, rightShieldActive = false;
 let frames = 0, lastSec = 0;
+
+// Eye state - only both eyes red when both palms
+let bothEyesRedIntensity = 0;
 
 // === HAND DATA ===
 function getHandData(landmarks) {
@@ -405,7 +405,7 @@ function getHandData(landmarks) {
   const indexPos = { x: (1 - index.x) * W, y: index.y * H };
   const palmSize = Math.hypot((landmarks[5].x - landmarks[17].x) * W, (landmarks[5].y - landmarks[17].y) * H);
   
-  return { palm: palmPos, index: indexPos, gesture, palmSize };
+  return { palm: palmPos, index: indexPos, gesture, palmSize, fingersExtended };
 }
 
 // === EYE DATA ===
@@ -458,14 +458,13 @@ function addEmber(x, y, vx, vy, hue = null) {
   embers.push({ x, y, vx, vy, life: 1, size: 2 + Math.random() * 4, hue: hue !== null ? hue : 25 + Math.random() * 25, wobble: Math.random() * Math.PI * 2, wobbleSpeed: 2 + Math.random() * 3 });
 }
 
-function addEyeEmber(x, y, vx, vy) {
-  if (eyeEmbers.length >= 50) eyeEmbers.shift();
-  eyeEmbers.push({ x, y, vx, vy, life: 1, size: 1 + Math.random() * 2, hue: Math.random() * 15 });
-}
-
 function addLightning(x1, y1, x2, y2, branches = 3, hue = 200) {
   if (lightnings.length >= CONFIG.MAX_LIGHTNING) lightnings.shift();
   lightnings.push({ points: generateLightningPoints(x1, y1, x2, y2, branches), life: 1, hue });
+}
+
+function addShockwave(x, y, maxR, color) {
+  shockwaves.push({ x, y, r: 0, maxR, life: 1, color });
 }
 
 function generateLightningPoints(x1, y1, x2, y2, depth) {
@@ -488,121 +487,117 @@ function dismissPortal(portal) {
   audio.playPortalCloseSound();
 }
 
-// === RED MYSTIC EYES ===
-class MysticEyes {
-  constructor() {
-    this.intensity = 0;
-    this.flickerPhase = 0;
-    this.pulsePhase = 0;
+// === DRAW RED EYE GLOW ===
+function drawRedGlowingEye(eyeData, ctx, intensity) {
+  if (!eyeData || intensity < 0.01) return;
+  
+  const { irisX, irisY, irisSize, contour } = eyeData;
+  const flickerVal = Math.sin(time * 25) * 0.1 + 0.9;
+  const pulseVal = Math.sin(time * 4) * 0.05 + 1;
+  
+  ctx.save();
+  ctx.beginPath();
+  if (contour && contour.length > 0) {
+    ctx.moveTo(contour[0].x, contour[0].y);
+    for (let i = 1; i < contour.length; i++) ctx.lineTo(contour[i].x, contour[i].y);
+    ctx.closePath();
+    ctx.clip();
   }
   
-  update(intensity, dt) {
-    this.intensity += (intensity - this.intensity) * 0.12;
-    this.flickerPhase += dt * 25;
-    this.pulsePhase += dt * 4;
-    
-    if (this.intensity > 0.2 && leftEyeData && rightEyeData) {
-      if (Math.random() < this.intensity * 0.2) {
-        const eye = Math.random() > 0.5 ? leftEyeData : rightEyeData;
-        addEyeEmber(eye.irisX + (Math.random() - 0.5) * eye.irisSize * 0.4, eye.irisY - eye.irisSize * 0.25, (Math.random() - 0.5) * 0.3, -0.6 - Math.random() * 1);
-      }
-    }
-  }
+  // Base glow - RED
+  const baseGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * 1.5);
+  baseGlow.addColorStop(0, `hsla(0, 100%, 88%, ${intensity * 0.85 * flickerVal})`);
+  baseGlow.addColorStop(0.25, `hsla(5, 100%, 65%, ${intensity * 0.7 * flickerVal})`);
+  baseGlow.addColorStop(0.5, `hsla(0, 100%, 42%, ${intensity * 0.45})`);
+  baseGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = baseGlow;
+  ctx.beginPath();
+  ctx.ellipse(irisX, irisY, irisSize * 1.5, irisSize * 1.3, 0, 0, Math.PI * 2);
+  ctx.fill();
   
-  drawEye(eyeData, ctx) {
-    if (!eyeData || this.intensity < 0.01) return;
-    
-    const { irisX, irisY, irisSize, contour } = eyeData;
-    const intensity = this.intensity;
-    const flickerVal = Math.sin(this.flickerPhase) * 0.1 + 0.9;
-    const pulseVal = Math.sin(this.pulsePhase) * 0.05 + 1;
-    
-    ctx.save();
-    ctx.beginPath();
-    if (contour && contour.length > 0) {
-      ctx.moveTo(contour[0].x, contour[0].y);
-      for (let i = 1; i < contour.length; i++) ctx.lineTo(contour[i].x, contour[i].y);
-      ctx.closePath();
-      ctx.clip();
-    }
-    
-    const baseGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * 1.5);
-    baseGlow.addColorStop(0, `hsla(0, 100%, 88%, ${intensity * 0.85 * flickerVal})`);
-    baseGlow.addColorStop(0.25, `hsla(5, 100%, 65%, ${intensity * 0.7 * flickerVal})`);
-    baseGlow.addColorStop(0.5, `hsla(0, 100%, 42%, ${intensity * 0.45})`);
-    baseGlow.addColorStop(1, 'transparent');
-    ctx.fillStyle = baseGlow;
-    ctx.beginPath();
-    ctx.ellipse(irisX, irisY, irisSize * 1.5, irisSize * 1.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    
-    const irisGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * pulseVal);
-    irisGlow.addColorStop(0, `hsla(15, 100%, 92%, ${intensity})`);
-    irisGlow.addColorStop(0.5, `hsla(5, 100%, 65%, ${intensity * 0.7})`);
-    irisGlow.addColorStop(1, 'transparent');
-    ctx.fillStyle = irisGlow;
-    ctx.beginPath();
-    ctx.arc(irisX, irisY, irisSize * pulseVal, 0, Math.PI * 2);
-    ctx.fill();
-    
-    const pupilGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * 0.32);
-    pupilGlow.addColorStop(0, `hsla(20, 100%, 98%, ${intensity})`);
-    pupilGlow.addColorStop(0.7, `hsla(10, 100%, 75%, ${intensity * 0.6})`);
-    pupilGlow.addColorStop(1, `hsla(5, 100%, 50%, ${intensity * 0.25})`);
-    ctx.fillStyle = pupilGlow;
-    ctx.beginPath();
-    ctx.arc(irisX, irisY, irisSize * 0.32, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.restore();
-    
-    const outerGlow = ctx.createRadialGradient(irisX, irisY, irisSize * 0.4, irisX, irisY, irisSize * 2);
-    outerGlow.addColorStop(0, `hsla(0, 100%, 48%, ${intensity * 0.08})`);
-    outerGlow.addColorStop(1, 'transparent');
-    ctx.fillStyle = outerGlow;
-    ctx.beginPath();
-    ctx.arc(irisX, irisY, irisSize * 2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    g.fillStyle = `hsla(0, 100%, 42%, ${intensity * 0.15})`;
-    g.beginPath();
-    g.arc(irisX / 2, irisY / 2, irisSize * 0.6, 0, Math.PI * 2);
-    g.fill();
-  }
+  // Iris glow
+  const irisGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * pulseVal);
+  irisGlow.addColorStop(0, `hsla(15, 100%, 92%, ${intensity})`);
+  irisGlow.addColorStop(0.5, `hsla(5, 100%, 65%, ${intensity * 0.7})`);
+  irisGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = irisGlow;
+  ctx.beginPath();
+  ctx.arc(irisX, irisY, irisSize * pulseVal, 0, Math.PI * 2);
+  ctx.fill();
   
-  draw() {
-    if (this.intensity < 0.01) return;
-    this.drawEye(leftEyeData, e);
-    this.drawEye(rightEyeData, e);
-    
-    eyeEmbers.forEach((em, idx) => {
-      em.y += em.vy;
-      em.x += em.vx + Math.sin(time * 7 + idx) * 0.2;
-      em.vy *= 0.98;
-      em.life -= 0.025;
-      
-      if (em.life > 0) {
-        const emGrad = e.createRadialGradient(em.x, em.y, 0, em.x, em.y, em.size * 1.8);
-        emGrad.addColorStop(0, `hsla(${em.hue + 10}, 100%, 88%, ${em.life * this.intensity})`);
-        emGrad.addColorStop(1, 'transparent');
-        e.fillStyle = emGrad;
-        e.beginPath();
-        e.arc(em.x, em.y, em.size * 1.8, 0, Math.PI * 2);
-        e.fill();
-      }
-    });
-    
-    for (let i = eyeEmbers.length - 1; i >= 0; i--) {
-      if (eyeEmbers[i].life <= 0) eyeEmbers.splice(i, 1);
-    }
-  }
+  // Pupil glow
+  const pupilGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * 0.32);
+  pupilGlow.addColorStop(0, `hsla(20, 100%, 98%, ${intensity})`);
+  pupilGlow.addColorStop(0.7, `hsla(10, 100%, 75%, ${intensity * 0.6})`);
+  pupilGlow.addColorStop(1, `hsla(5, 100%, 50%, ${intensity * 0.25})`);
+  ctx.fillStyle = pupilGlow;
+  ctx.beginPath();
+  ctx.arc(irisX, irisY, irisSize * 0.32, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.restore();
+  
+  // Outer glow
+  const outerGlow = ctx.createRadialGradient(irisX, irisY, irisSize * 0.4, irisX, irisY, irisSize * 2);
+  outerGlow.addColorStop(0, `hsla(0, 100%, 48%, ${intensity * 0.08})`);
+  outerGlow.addColorStop(1, 'transparent');
+  ctx.fillStyle = outerGlow;
+  ctx.beginPath();
+  ctx.arc(irisX, irisY, irisSize * 2, 0, Math.PI * 2);
+  ctx.fill();
+  
+  // Glow layer
+  g.fillStyle = `hsla(0, 100%, 42%, ${intensity * 0.15})`;
+  g.beginPath();
+  g.arc(irisX / 2, irisY / 2, irisSize * 0.6, 0, Math.PI * 2);
+  g.fill();
 }
 
-// === RED PORTAL (ORIGINAL STYLE) ===
+// === BLAST EXPLOSION ===
+function triggerExplosion(x, y, power) {
+  audio.playExplosionSound(power);
+  
+  addShockwave(x, y, 220 * power, { h: 195, s: 55, l: 50 });
+  addShockwave(x, y, 300 * power, { h: 200, s: 50, l: 40 });
+  addShockwave(x, y, 380 * power, { h: 205, s: 45, l: 30 });
+  
+  for (let i = 0; i < Math.floor(90 * power); i++) {
+    const angle = (i / 90) * Math.PI * 2 + Math.random() * 0.35;
+    const speed = (14 + Math.random() * 28) * power;
+    const hue = 190 + Math.random() * 25;
+    const size = 10 + Math.random() * 18;
+    addParticle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, size, 0.85 + Math.random() * 0.4, hue);
+  }
+  
+  for (let i = 0; i < Math.floor(70 * power); i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 18 + Math.random() * 35;
+    const hue = 185 + Math.random() * 30;
+    addSpark(x, y, Math.cos(angle) * speed * power, Math.sin(angle) * speed * power, hue, 2.5 + Math.random() * 2);
+  }
+  
+  for (let i = 0; i < Math.floor(50 * power); i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = Math.random() * 35;
+    const speed = 4 + Math.random() * 10;
+    addEmber(x + Math.cos(angle) * dist, y + Math.sin(angle) * dist, Math.cos(angle) * speed, Math.sin(angle) * speed - 2.5, 190 + Math.random() * 20);
+  }
+  
+  for (let i = 0; i < Math.floor(12 * power); i++) {
+    const angle = (i / 12) * Math.PI * 2 + Math.random() * 0.6;
+    const dist = 120 + Math.random() * 180;
+    addLightning(x, y, x + Math.cos(angle) * dist, y + Math.sin(angle) * dist, 4, 190 + Math.random() * 20);
+  }
+  
+  flash = power * 0.75;
+  shake = 45 * power;
+}
+
+// === RED PORTAL ===
 class Portal {
   constructor(x, y, r) {
     this.x = x; this.y = y; this.r = 0;
-    this.targetR = Math.max(100, Math.min(250, r));
+    this.targetR = Math.max(80, Math.min(250, r));
     this.rot = 0; this.life = 1; this.age = 0;
     this.runeOffset = Math.random() * RUNES.length;
     this.pulsePhase = Math.random() * Math.PI * 2;
@@ -640,7 +635,6 @@ class Portal {
     c.globalAlpha = Math.min(1, life, this.r / 40);
     c.translate(x, y);
     
-    // Fire ring
     const flames = 48;
     for (let i = 0; i < flames; i++) {
       const a = (i / flames) * Math.PI * 2 + time * 0.3;
@@ -671,7 +665,6 @@ class Portal {
       c.restore();
     }
     
-    // Rings
     for (let i = 0; i < CONFIG.PORTAL_RINGS; i++) {
       const ringR = rr * (0.4 + i * 0.1);
       const ringRot = rot * (2 - i * 0.25) * (i % 2 ? 1 : -1);
@@ -693,7 +686,6 @@ class Portal {
       c.restore();
     }
     
-    // Runes
     c.save();
     c.rotate(-rot * 0.4);
     const runeR = rr * 0.75;
@@ -719,7 +711,6 @@ class Portal {
     c.shadowBlur = 0;
     c.restore();
     
-    // Void center
     const voidSize = rr * 0.38;
     const voidGrad = c.createRadialGradient(0, 0, 0, 0, 0, voidSize);
     voidGrad.addColorStop(0, `rgba(0, 0, 0, ${life})`);
@@ -729,15 +720,6 @@ class Portal {
     c.fillStyle = voidGrad;
     c.beginPath();
     c.arc(0, 0, voidSize, 0, Math.PI * 2);
-    c.fill();
-    
-    const edgeGrad = c.createRadialGradient(0, 0, voidSize * 0.7, 0, 0, voidSize * 1.2);
-    edgeGrad.addColorStop(0, 'transparent');
-    edgeGrad.addColorStop(0.5, `hsla(0, 100%, 40%, ${life * 0.3})`);
-    edgeGrad.addColorStop(1, 'transparent');
-    c.fillStyle = edgeGrad;
-    c.beginPath();
-    c.arc(0, 0, voidSize * 1.2, 0, Math.PI * 2);
     c.fill();
     
     c.save();
@@ -762,7 +744,7 @@ class Portal {
   }
 }
 
-// === RED MANDALA (ORIGINAL STYLE) ===
+// === RED MANDALA ===
 class Mandala {
   constructor(x, y, size, isLeft) {
     this.x = x; this.y = y;
@@ -800,7 +782,6 @@ class Mandala {
     c.globalAlpha = life;
     c.translate(x, y);
     
-    // Outer glow
     const outerGlow = c.createRadialGradient(0, 0, size * 0.6, 0, 0, size * 1.4);
     outerGlow.addColorStop(0, 'transparent');
     outerGlow.addColorStop(0.5, `hsla(0, 100%, 40%, 0.25)`);
@@ -810,7 +791,6 @@ class Mandala {
     c.arc(0, 0, size * 1.4, 0, Math.PI * 2);
     c.fill();
     
-    // Hexagons
     c.save();
     c.rotate(rot);
     for (let layer = 0; layer <= 3; layer++) {
@@ -833,7 +813,6 @@ class Mandala {
     }
     c.restore();
     
-    // Triangles
     c.save();
     c.rotate(-rot * 1.5);
     for (let i = 0; i < 2; i++) {
@@ -852,7 +831,6 @@ class Mandala {
     }
     c.restore();
     
-    // Circles
     c.save();
     c.rotate(rot * 0.5);
     for (let i = 0; i < 4; i++) {
@@ -868,7 +846,6 @@ class Mandala {
     }
     c.restore();
     
-    // Runes
     c.save();
     c.rotate(-rot * 0.3);
     c.font = `bold ${size * 0.08}px Georgia`;
@@ -888,7 +865,6 @@ class Mandala {
     c.shadowBlur = 0;
     c.restore();
     
-    // Center
     const centerGrad = c.createRadialGradient(0, 0, 0, 0, 0, size * 0.25);
     centerGrad.addColorStop(0, `hsla(10, 100%, 90%, ${life})`);
     centerGrad.addColorStop(0.5, `hsla(0, 100%, 60%, ${life * 0.6})`);
@@ -904,7 +880,6 @@ class Mandala {
     c.textBaseline = 'middle';
     c.fillText(SACRED[Math.floor(time) % SACRED.length], 0, 0);
     
-    // Spokes
     c.save();
     c.rotate(rot * 2);
     for (let i = 0; i < 12; i++) {
@@ -931,7 +906,7 @@ class Mandala {
   }
 }
 
-// === FIRE TRAIL (ORIGINAL STYLE) ===
+// === FIRE TRAIL ===
 let circleTrail = [];
 
 function drawRealisticFireTrail(trail) {
@@ -1017,8 +992,9 @@ function drawRealisticFireTrail(trail) {
   g.stroke();
 }
 
+// === CIRCLE DETECTION ===
 function detectCircle(trail) {
-  if (trail.length < 35) return null;
+  if (trail.length < 25) return null;
   
   let cx = 0, cy = 0;
   trail.forEach(p => { cx += p.x; cy += p.y; });
@@ -1028,7 +1004,7 @@ function detectCircle(trail) {
   trail.forEach(p => avgR += Math.hypot(p.x - cx, p.y - cy));
   avgR /= trail.length;
   
-  if (avgR < 60) return null;
+  if (avgR < 40) return null;
   
   let variance = 0;
   trail.forEach(p => variance += Math.abs(Math.hypot(p.x - cx, p.y - cy) - avgR));
@@ -1045,48 +1021,47 @@ function detectCircle(trail) {
     totalAngle += da;
   }
   
-  if (circularity > 0.55 && Math.abs(totalAngle) / (Math.PI * 2) > 0.7) {
+  const angleRatio = Math.abs(totalAngle) / (Math.PI * 2);
+  
+  if (circularity > 0.35 && angleRatio > 0.5) {
     return { cx, cy, r: avgR };
   }
   return null;
 }
 
-// === 🌬️ LIGHT AIR WAVE ENERGY STREAM ===
-function drawAirWaveStream(x1, y1, x2, y2, intensity) {
+// === WATER WAVE ===
+function drawWaterWaveStream(x1, y1, x2, y2, intensity) {
   const dx = x2 - x1;
   const dy = y2 - y1;
-  const dist = Math.hypot(dx, dy);
   const mx = (x1 + x2) / 2;
   const my = (y1 + y2) / 2;
   const angle = Math.atan2(dy, dx);
   const perpX = -Math.sin(angle);
   const perpY = Math.cos(angle);
   
-  // === LIGHT AIR WAVE LINES (THIN & TRANSPARENT) ===
-  const waveCount = 5;
+  const waveGroups = 12;
   
-  for (let w = 0; w < waveCount; w++) {
-    const waveOffset = (w - waveCount / 2) * 8;
-    const wavePhase = w * 0.7;
+  for (let w = 0; w < waveGroups; w++) {
+    const waveOffset = (w - waveGroups / 2) * 5;
+    const wavePhase = w * 0.8 + Math.sin(time * 1.5 + w) * 0.4;
+    const waveSpeed = 5 + w * 0.4;
     
-    for (let layer = 2; layer >= 0; layer--) {
+    for (let layer = 4; layer >= 0; layer--) {
       c.save();
       c.beginPath();
       
-      const segments = 100;
+      const segments = 180;
       for (let i = 0; i <= segments; i++) {
         const t = i / segments;
         const baseX = x1 + dx * t;
         const baseY = y1 + dy * t;
         
-        // Smooth sine waves
-        const wave1 = Math.sin(t * Math.PI * 4 + time * 8 + wavePhase) * (12 + w * 3) * intensity;
-        const wave2 = Math.sin(t * Math.PI * 7 + time * 12 + wavePhase * 1.5) * (6 + w * 2) * intensity;
+        const wave1 = Math.sin(t * Math.PI * 2.5 + time * waveSpeed + wavePhase) * (22 + w * 2) * intensity;
+        const wave2 = Math.sin(t * Math.PI * 4.5 + time * (waveSpeed * 1.2) + wavePhase * 1.5) * (14 + w * 1.5) * intensity;
+        const wave3 = Math.sin(t * Math.PI * 7 + time * (waveSpeed * 0.8) - wavePhase * 0.6) * (8 + w) * intensity;
         
-        // Envelope - fade at ends
-        const envelope = Math.sin(t * Math.PI);
-        
-        const totalWave = (wave1 + wave2) * envelope + waveOffset;
+        const envelope = Math.pow(Math.sin(t * Math.PI), 0.5);
+        const totalWave = (wave1 + wave2 + wave3) * envelope + waveOffset;
         
         const px = baseX + perpX * totalWave;
         const py = baseY + perpY * totalWave;
@@ -1095,24 +1070,14 @@ function drawAirWaveStream(x1, y1, x2, y2, intensity) {
         else c.lineTo(px, py);
       }
       
-      // Light blue/white colors - very transparent
-      const alpha = intensity * (0.3 - layer * 0.08) * (1 - w * 0.12);
-      const lightness = 95 - layer * 10;
-      const saturation = 30 + layer * 20;
+      const alpha = intensity * (0.45 - layer * 0.07) * (1 - w * 0.06);
+      const hue = 200 + layer * 4 - w * 1.5;
+      const sat = 60 + layer * 8;
+      const light = 40 - layer * 7 - w * 1.5;
       
-      if (layer === 2) {
-        c.strokeStyle = `hsla(200, ${saturation}%, ${lightness - 20}%, ${alpha * 0.4})`;
-        c.lineWidth = 6 - w * 0.5;
-        c.filter = 'blur(4px)';
-      } else if (layer === 1) {
-        c.strokeStyle = `hsla(195, ${saturation}%, ${lightness - 5}%, ${alpha * 0.7})`;
-        c.lineWidth = 3 - w * 0.3;
-        c.filter = 'blur(1px)';
-      } else {
-        c.strokeStyle = `hsla(190, 20%, ${lightness}%, ${alpha})`;
-        c.lineWidth = 1.5 - w * 0.15;
-      }
-      
+      c.strokeStyle = `hsla(${hue}, ${sat}%, ${light}%, ${alpha})`;
+      c.lineWidth = (10 - layer * 2 - w * 0.4);
+      if (layer > 2) c.filter = `blur(${layer * 2}px)`;
       c.lineCap = 'round';
       c.stroke();
       c.filter = 'none';
@@ -1120,80 +1085,31 @@ function drawAirWaveStream(x1, y1, x2, y2, intensity) {
     }
   }
   
-  // === BRIGHT CENTER LINE ===
-  c.save();
-  c.beginPath();
-  for (let i = 0; i <= 100; i++) {
-    const t = i / 100;
-    const baseX = x1 + dx * t;
-    const baseY = y1 + dy * t;
-    
-    const wave = Math.sin(t * Math.PI * 3 + time * 10) * 8 * intensity * Math.sin(t * Math.PI);
-    
-    const px = baseX + perpX * wave;
-    const py = baseY + perpY * wave;
-    
-    if (i === 0) c.moveTo(px, py);
-    else c.lineTo(px, py);
-  }
-  c.strokeStyle = `hsla(200, 30%, 98%, ${intensity * 0.5})`;
-  c.lineWidth = 1.5;
-  c.lineCap = 'round';
-  c.stroke();
-  c.restore();
-  
-  // === SMALL LIGHT PARTICLES ===
-  if (Math.random() < 0.3 * intensity) {
-    const t = Math.random();
-    const wave = Math.sin(t * Math.PI * 4 + time * 8) * 20 * intensity * Math.sin(t * Math.PI);
-    const px = x1 + dx * t + perpX * wave + (Math.random() - 0.5) * 15;
-    const py = y1 + dy * t + perpY * wave + (Math.random() - 0.5) * 15;
-    
-    // Light blue particles
-    addSpark(px, py, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2 - 0.5, 190 + Math.random() * 20, 1.5);
-  }
-  
-  // === SUBTLE LIGHTNING ===
-  if (Math.random() < 0.06 * intensity) {
-    addLightning(x1, y1, x2, y2, 2, 195 + Math.random() * 15);
-  }
-  
-  // === HAND GLOWS (LIGHT BLUE) ===
   [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach((p, idx) => {
-    const orbSize = 25 + intensity * 30;
-    const orbPulse = 1 + Math.sin(time * 8 + idx * Math.PI) * 0.08;
+    const orbSize = 35 + intensity * 50;
+    const orbPulse = 1 + Math.sin(time * 7 + idx * Math.PI) * 0.12;
     
-    // Soft glow
-    for (let i = 3; i >= 0; i--) {
+    for (let i = 5; i >= 0; i--) {
       const layerSize = orbSize * orbPulse * (1 + i * 0.35);
-      
       const gradient = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, layerSize);
-      gradient.addColorStop(0, `hsla(200, 50%, ${98 - i * 8}%, ${intensity * (0.4 - i * 0.08)})`);
-      gradient.addColorStop(0.5, `hsla(195, 40%, ${85 - i * 12}%, ${intensity * (0.2 - i * 0.04)})`);
+      gradient.addColorStop(0, `hsla(195, 55%, 70%, ${intensity * (0.55 - i * 0.08)})`);
+      gradient.addColorStop(0.5, `hsla(200, 50%, 50%, ${intensity * (0.35 - i * 0.05)})`);
       gradient.addColorStop(1, 'transparent');
-      
       c.fillStyle = gradient;
       c.beginPath();
       c.arc(p.x, p.y, layerSize, 0, Math.PI * 2);
       c.fill();
     }
-    
-    // Bright core
-    c.fillStyle = `hsla(200, 30%, 98%, ${intensity * 0.6})`;
-    c.beginPath();
-    c.arc(p.x, p.y, 5 + intensity * 3, 0, Math.PI * 2);
-    c.fill();
   });
   
-  // === CENTER GLOW ===
-  const centerSize = 20 + intensity * 35;
-  const centerPulse = 1 + Math.sin(time * 6) * 0.1;
+  const centerSize = 30 + intensity * 55;
+  const centerPulse = 1 + Math.sin(time * 5.5) * 0.15;
   
-  for (let i = 2; i >= 0; i--) {
-    const layerSize = centerSize * centerPulse * (1 + i * 0.4);
+  for (let i = 4; i >= 0; i--) {
+    const layerSize = centerSize * centerPulse * (1 + i * 0.3);
     const gradient = c.createRadialGradient(mx, my, 0, mx, my, layerSize);
-    gradient.addColorStop(0, `hsla(195, 40%, ${98 - i * 10}%, ${intensity * (0.35 - i * 0.1)})`);
-    gradient.addColorStop(0.6, `hsla(200, 30%, ${85 - i * 15}%, ${intensity * (0.15 - i * 0.04)})`);
+    gradient.addColorStop(0, `hsla(195, 55%, 70%, ${intensity * (0.5 - i * 0.1)})`);
+    gradient.addColorStop(0.5, `hsla(200, 50%, 55%, ${intensity * (0.3 - i * 0.06)})`);
     gradient.addColorStop(1, 'transparent');
     c.fillStyle = gradient;
     c.beginPath();
@@ -1201,51 +1117,28 @@ function drawAirWaveStream(x1, y1, x2, y2, intensity) {
     c.fill();
   }
   
-  // === GLOW LAYER ===
-  g.strokeStyle = `hsla(200, 40%, 70%, ${intensity * 0.2})`;
-  g.lineWidth = 20;
+  if (Math.random() < 0.12 * intensity) {
+    const t1 = Math.random() * 0.35;
+    const t2 = 0.65 + Math.random() * 0.35;
+    const p1x = x1 + dx * t1 + (Math.random() - 0.5) * 40;
+    const p1y = y1 + dy * t1 + (Math.random() - 0.5) * 40;
+    const p2x = x1 + dx * t2 + (Math.random() - 0.5) * 40;
+    const p2y = y1 + dy * t2 + (Math.random() - 0.5) * 40;
+    addLightning(p1x, p1y, p2x, p2y, 3, 195 + Math.random() * 20);
+  }
+  
+  g.strokeStyle = `hsla(195, 55%, 35%, ${intensity * 0.45})`;
+  g.lineWidth = 30;
   g.lineCap = 'round';
   g.beginPath();
   g.moveTo(x1 / 2, y1 / 2);
   g.lineTo(x2 / 2, y2 / 2);
   g.stroke();
-  
-  g.fillStyle = `hsla(195, 40%, 75%, ${intensity * 0.25})`;
-  g.beginPath();
-  g.arc(mx / 2, my / 2, centerSize / 2, 0, Math.PI * 2);
-  g.fill();
-}
-
-// === EXPLOSION ===
-function triggerExplosion(x, y, power) {
-  audio.playExplosionSound(power);
-  
-  for (let i = 0; i < Math.floor(70 * power); i++) {
-    const angle = (i / 70) * Math.PI * 2;
-    const speed = (10 + Math.random() * 20) * power;
-    const hue = 20 + Math.random() * 30;
-    addParticle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 20 + Math.random() * 25, 1, hue);
-  }
-  
-  for (let i = 0; i < Math.floor(50 * power); i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const speed = 10 + Math.random() * 25;
-    addSpark(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed - 3, 25 + Math.random() * 25, 3);
-  }
-  
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    addLightning(x, y, x + Math.cos(angle) * (140 + Math.random() * 100), y + Math.sin(angle) * (140 + Math.random() * 100), 3, 35);
-  }
-  
-  flash = power * 0.8;
-  shake = 45 * power;
 }
 
 // === INSTANCES ===
 let leftMandala = null;
 let rightMandala = null;
-const mysticEyes = new MysticEyes();
 
 // === UPDATE ===
 function update(dt) {
@@ -1253,7 +1146,7 @@ function update(dt) {
   
   for (let i = particles.length - 1; i >= 0; i--) {
     const p = particles[i];
-    p.vy += 0.2; p.vx *= 0.96; p.vy *= 0.96;
+    p.vy += 0.15; p.vx *= 0.97; p.vy *= 0.97;
     p.x += p.vx; p.y += p.vy;
     p.life -= dt / p.maxLife;
     if (p.life <= 0) particles.splice(i, 1);
@@ -1262,10 +1155,10 @@ function update(dt) {
   for (let i = sparks.length - 1; i >= 0; i--) {
     const sp = sparks[i];
     sp.trail.push({ x: sp.x, y: sp.y });
-    if (sp.trail.length > 12) sp.trail.shift();
-    sp.vy += 0.12; sp.vx *= 0.97; sp.vy *= 0.97;
+    if (sp.trail.length > 15) sp.trail.shift();
+    sp.vy += 0.08; sp.vx *= 0.98; sp.vy *= 0.98;
     sp.x += sp.vx; sp.y += sp.vy;
-    sp.life -= 0.025;
+    sp.life -= 0.02;
     if (sp.life <= 0) sparks.splice(i, 1);
   }
   
@@ -1274,14 +1167,21 @@ function update(dt) {
     em.wobble += em.wobbleSpeed * dt;
     em.x += em.vx + Math.sin(em.wobble) * 0.4;
     em.y += em.vy;
-    em.vy -= 0.04; em.vx *= 0.99;
-    em.life -= 0.015;
+    em.vy -= 0.03; em.vx *= 0.99;
+    em.life -= 0.012;
     if (em.life <= 0 || em.y < -50) embers.splice(i, 1);
   }
   
   for (let i = lightnings.length - 1; i >= 0; i--) {
-    lightnings[i].life -= 0.12;
+    lightnings[i].life -= 0.1;
     if (lightnings[i].life <= 0) lightnings.splice(i, 1);
+  }
+  
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const sw = shockwaves[i];
+    sw.r += (sw.maxR - sw.r) * 0.15;
+    sw.life -= 0.04;
+    if (sw.life <= 0) shockwaves.splice(i, 1);
   }
   
   for (let i = portals.length - 1; i >= 0; i--) {
@@ -1289,7 +1189,7 @@ function update(dt) {
     if (portals[i].life <= 0 || portals[i].r < 10) portals.splice(i, 1);
   }
   
-  mysticEyes.update(targetEyeIntensity, dt);
+  bothEyesRedIntensity *= 0.9;
   
   flash *= 0.88;
   shake *= 0.9;
@@ -1309,16 +1209,34 @@ function render() {
     c.translate(sx, sy); s.translate(sx, sy); e.translate(sx, sy);
   }
   
+  shockwaves.forEach(sw => {
+    const gradient = c.createRadialGradient(sw.x, sw.y, sw.r * 0.85, sw.x, sw.y, sw.r);
+    gradient.addColorStop(0, 'transparent');
+    gradient.addColorStop(0.5, `hsla(${sw.color.h}, ${sw.color.s}%, ${sw.color.l}%, ${sw.life * 0.45})`);
+    gradient.addColorStop(0.8, `hsla(${sw.color.h}, ${sw.color.s}%, ${sw.color.l + 20}%, ${sw.life * 0.65})`);
+    gradient.addColorStop(1, 'transparent');
+    c.fillStyle = gradient;
+    c.beginPath();
+    c.arc(sw.x, sw.y, sw.r, 0, Math.PI * 2);
+    c.fill();
+  });
+  
   portals.forEach(p => p.draw());
+  
   if (circleTrail.length > 2) drawRealisticFireTrail(circleTrail);
+  
   if (leftMandala && leftMandala.life > 0) leftMandala.draw();
   if (rightMandala && rightMandala.life > 0) rightMandala.draw();
   
   if (pullState.active && leftData && rightData) {
-    drawAirWaveStream(leftData.palm.x, leftData.palm.y, rightData.palm.x, rightData.palm.y, pullState.energy);
+    drawWaterWaveStream(leftData.index.x, leftData.index.y, rightData.index.x, rightData.index.y, pullState.energy);
   }
   
-  mysticEyes.draw();
+  // BOTH eyes red only when both palms are open
+  if (bothEyesRedIntensity > 0.01) {
+    if (leftEyeData) drawRedGlowingEye(leftEyeData, e, bothEyesRedIntensity);
+    if (rightEyeData) drawRedGlowingEye(rightEyeData, e, bothEyesRedIntensity);
+  }
   
   lightnings.forEach(l => {
     if (l.points.length < 2) return;
@@ -1326,18 +1244,19 @@ function render() {
       s.beginPath();
       s.moveTo(l.points[0].x, l.points[0].y);
       l.points.forEach(p => s.lineTo(p.x, p.y));
-      if (layer === 0) { s.strokeStyle = `hsla(${l.hue}, 60%, 50%, ${l.life * 0.25})`; s.lineWidth = 6; }
-      else if (layer === 1) { s.strokeStyle = `hsla(${l.hue}, 50%, 70%, ${l.life * 0.6})`; s.lineWidth = 3; }
-      else { s.strokeStyle = `hsla(${l.hue}, 30%, 95%, ${l.life})`; s.lineWidth = 1; }
+      if (layer === 0) { s.strokeStyle = `hsla(${l.hue}, 50%, 30%, ${l.life * 0.35})`; s.lineWidth = 9; s.filter = 'blur(5px)'; }
+      else if (layer === 1) { s.strokeStyle = `hsla(${l.hue}, 50%, 50%, ${l.life * 0.65})`; s.lineWidth = 4; s.filter = 'blur(2px)'; }
+      else { s.strokeStyle = `hsla(${l.hue}, 40%, 88%, ${l.life})`; s.lineWidth = 1.8; s.filter = 'none'; }
       s.stroke();
+      s.filter = 'none';
     }
   });
   
   embers.forEach(em => {
     const flicker = Math.sin(time * em.wobbleSpeed * 3 + em.wobble) * 0.3 + 0.7;
     const emberGrad = s.createRadialGradient(em.x, em.y, 0, em.x, em.y, em.size * 2);
-    emberGrad.addColorStop(0, `hsla(${em.hue + 12}, 100%, 88%, ${em.life * flicker})`);
-    emberGrad.addColorStop(0.4, `hsla(${em.hue}, 100%, 55%, ${em.life * flicker * 0.5})`);
+    emberGrad.addColorStop(0, `hsla(${em.hue + 10}, 60%, 70%, ${em.life * flicker})`);
+    emberGrad.addColorStop(0.4, `hsla(${em.hue}, 55%, 50%, ${em.life * flicker * 0.5})`);
     emberGrad.addColorStop(1, 'transparent');
     s.fillStyle = emberGrad;
     s.beginPath();
@@ -1349,8 +1268,8 @@ function render() {
     if (sp.trail.length > 1) {
       for (let i = 1; i < sp.trail.length; i++) {
         const t = i / sp.trail.length;
-        s.strokeStyle = `hsla(${sp.hue}, 70%, 70%, ${t * sp.life * 0.6})`;
-        s.lineWidth = sp.size * t;
+        s.strokeStyle = `hsla(${sp.hue}, 55%, 60%, ${t * sp.life * 0.7})`;
+        s.lineWidth = sp.size * t * 1.2;
         s.lineCap = 'round';
         s.beginPath();
         s.moveTo(sp.trail[i-1].x, sp.trail[i-1].y);
@@ -1361,8 +1280,8 @@ function render() {
     
     const flicker = Math.sin(time * sp.flickerSpeed) * 0.3 + 0.7;
     const sparkGrad = s.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, sp.size * 3);
-    sparkGrad.addColorStop(0, `hsla(${sp.hue}, 50%, 95%, ${sp.life * flicker})`);
-    sparkGrad.addColorStop(0.4, `hsla(${sp.hue}, 60%, 65%, ${sp.life * flicker * 0.4})`);
+    sparkGrad.addColorStop(0, `hsla(${sp.hue}, 45%, 85%, ${sp.life * flicker})`);
+    sparkGrad.addColorStop(0.4, `hsla(${sp.hue}, 50%, 55%, ${sp.life * flicker * 0.4})`);
     sparkGrad.addColorStop(1, 'transparent');
     s.fillStyle = sparkGrad;
     s.beginPath();
@@ -1376,24 +1295,19 @@ function render() {
     const flicker = Math.sin(time * 10 + p.flickerPhase) * 0.2 + 0.8;
     
     const grad = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
-    grad.addColorStop(0, `hsla(${p.hue + 15}, 100%, 92%, ${alpha * flicker})`);
-    grad.addColorStop(0.3, `hsla(${p.hue}, 100%, 58%, ${alpha * flicker * 0.5})`);
+    grad.addColorStop(0, `hsla(${p.hue + 10}, 55%, 80%, ${alpha * flicker})`);
+    grad.addColorStop(0.3, `hsla(${p.hue}, 50%, 55%, ${alpha * flicker * 0.5})`);
     grad.addColorStop(1, 'transparent');
     c.fillStyle = grad;
     c.beginPath();
     c.arc(p.x, p.y, size, 0, Math.PI * 2);
     c.fill();
-    
-    g.fillStyle = `hsla(${p.hue}, 100%, 48%, ${alpha * 0.2})`;
-    g.beginPath();
-    g.arc(p.x / 2, p.y / 2, size / 2, 0, Math.PI * 2);
-    g.fill();
   });
   
   c.restore(); s.restore(); e.restore();
   
   if (flash > 0.01) {
-    c.fillStyle = `hsla(200, 50%, 80%, ${flash * 0.25})`;
+    c.fillStyle = `hsla(195, 100%, 65%, ${flash * 0.35})`;
     c.fillRect(0, 0, W, H);
   }
 }
@@ -1408,45 +1322,59 @@ function processHands() {
   if (rightData) gestureText += ` R: ${rightData.gesture}`;
   document.getElementById('gestureType').textContent = gestureText;
   
+  // Track velocity for blast detection
   let leftVel = 0, rightVel = 0;
-  if (leftData && prevLeftPos) leftVel = Math.hypot(leftData.palm.x - prevLeftPos.x, leftData.palm.y - prevLeftPos.y);
-  if (rightData && prevRightPos) rightVel = Math.hypot(rightData.palm.x - prevRightPos.x, rightData.palm.y - prevRightPos.y);
+  if (leftData && prevLeftPos) leftVel = Math.hypot(leftData.index.x - prevLeftPos.x, leftData.index.y - prevLeftPos.y);
+  if (rightData && prevRightPos) rightVel = Math.hypot(rightData.index.x - prevRightPos.x, rightData.index.y - prevRightPos.y);
   
-  prevLeftPos = leftData ? { ...leftData.palm } : null;
-  prevRightPos = rightData ? { ...rightData.palm } : null;
+  prevLeftPos = leftData ? { x: leftData.index.x, y: leftData.index.y } : null;
+  prevRightPos = rightData ? { x: rightData.index.x, y: rightData.index.y } : null;
   
-  // Portal drawing
   const leftPointing = leftData && leftData.gesture === 'pointing';
   const rightPointing = rightData && rightData.gesture === 'pointing';
+  const bothPointing = leftPointing && rightPointing;
   
-  if (leftPointing || rightPointing) {
-    const drawHand = leftPointing ? leftData : rightData;
-    circleTrail.push({ x: drawHand.index.x, y: drawHand.index.y });
-    if (circleTrail.length > 100) circleTrail.shift();
-    
-    const result = detectCircle(circleTrail);
-    if (result) {
-      if (portals.length >= 4) portals.shift();
-      portals.push(new Portal(result.cx, result.cy, result.r));
-      circleTrail = [];
-      flash = 0.6;
-      audio.init();
-      audio.playPortalSound();
-      
-      for (let i = 0; i < 60; i++) {
-        const a = (i / 60) * Math.PI * 2;
-        const spd = 5 + Math.random() * 7;
-        addSpark(result.cx + Math.cos(a) * result.r, result.cy + Math.sin(a) * result.r, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() * 15);
-      }
-    }
-  } else {
+  const leftPalm = leftData && leftData.gesture === 'openPalm';
+  const rightPalm = rightData && rightData.gesture === 'openPalm';
+  const bothPalms = leftPalm && rightPalm;
+  
+  // === PORTAL DRAWING - only when ONE hand is pointing (not both) ===
+  if (leftPointing && !rightPointing && !bothPointing) {
+    circleTrail.push({ x: leftData.index.x, y: leftData.index.y });
+    if (circleTrail.length > 120) circleTrail.shift();
+  } else if (rightPointing && !leftPointing && !bothPointing) {
+    circleTrail.push({ x: rightData.index.x, y: rightData.index.y });
+    if (circleTrail.length > 120) circleTrail.shift();
+  } else if (!leftPointing && !rightPointing) {
+    // Clear trail only when not pointing at all
+    circleTrail = [];
+  } else if (bothPointing) {
+    // Both pointing = water wave, clear trail
     circleTrail = [];
   }
   
-  // Portal dismiss
-  const leftPalm = leftData && leftData.gesture === 'openPalm';
-  const rightPalm = rightData && rightData.gesture === 'openPalm';
+  // Check for circle only when drawing with one hand
+  if ((leftPointing && !rightPointing) || (rightPointing && !leftPointing)) {
+    if (circleTrail.length > 25) {
+      const result = detectCircle(circleTrail);
+      if (result) {
+        if (portals.length >= 4) portals.shift();
+        portals.push(new Portal(result.cx, result.cy, result.r));
+        circleTrail = [];
+        flash = 0.6;
+        audio.init();
+        audio.playPortalSound();
+        
+        for (let i = 0; i < 60; i++) {
+          const a = (i / 60) * Math.PI * 2;
+          const spd = 5 + Math.random() * 7;
+          addSpark(result.cx + Math.cos(a) * result.r, result.cy + Math.sin(a) * result.r, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() * 15);
+        }
+      }
+    }
+  }
   
+  // === PORTAL DISMISS ===
   if (leftPalm || rightPalm) {
     const palmPositions = [];
     if (leftPalm) palmPositions.push(leftData.palm);
@@ -1471,11 +1399,11 @@ function processHands() {
     return false;
   }
   
-  // Shields
+  // === SHIELDS ===
   const wasLeftActive = leftShieldActive;
   const wasRightActive = rightShieldActive;
   
-  if (leftData && leftData.gesture === 'openPalm' && !isPalmOverPortal(leftData.palm)) {
+  if (leftPalm && !isPalmOverPortal(leftData.palm)) {
     const size = Math.max(140, leftData.palmSize * 2.8);
     if (!leftMandala || leftMandala.life <= 0) leftMandala = new Mandala(leftData.palm.x, leftData.palm.y, size, true);
     else leftMandala.update(leftData.palm.x, leftData.palm.y, size, true);
@@ -1486,7 +1414,7 @@ function processHands() {
     leftShieldActive = false;
   }
   
-  if (rightData && rightData.gesture === 'openPalm' && !isPalmOverPortal(rightData.palm)) {
+  if (rightPalm && !isPalmOverPortal(rightData.palm)) {
     const size = Math.max(140, rightData.palmSize * 2.8);
     if (!rightMandala || rightMandala.life <= 0) rightMandala = new Mandala(rightData.palm.x, rightData.palm.y, size, false);
     else rightMandala.update(rightData.palm.x, rightData.palm.y, size, true);
@@ -1497,27 +1425,25 @@ function processHands() {
     rightShieldActive = false;
   }
   
-  // === ENERGY PULL - INCREASED DISTANCE (80 to 900) ===
+  // === BOTH EYES RED only when BOTH palms are open ===
+  if (bothPalms) {
+    bothEyesRedIntensity = 1;
+  }
+  
+  // === WATER WAVE + BLAST ===
   pullState.active = false;
-  targetEyeIntensity = 0;
   
   const powerMeter = document.getElementById('powerMeter');
   const powerFill = document.getElementById('powerFill');
   
-  const canEnergyPull = leftData && rightData && !leftPointing && !rightPointing;
-  
-  if (canEnergyPull) {
-    const dist = Math.hypot(leftData.palm.x - rightData.palm.x, leftData.palm.y - rightData.palm.y);
+  if (bothPointing) {
+    const dist = Math.hypot(leftData.index.x - rightData.index.x, leftData.index.y - rightData.index.y);
     
-    if (dist < 80) {
-      pullState.energy = 0;
-    } else if (dist < 900) {
+    if (dist > 60 && dist < 1000) {
       pullState.active = true;
       pullState.distance = dist;
-      pullState.energy = Math.min(1, (dist - 80) / 700);
+      pullState.energy = Math.min(1, (dist - 60) / 600);
       pullState.peakEnergy = Math.max(pullState.peakEnergy, pullState.energy);
-      
-      targetEyeIntensity = pullState.energy;
       
       powerMeter.classList.add('active');
       powerFill.style.width = (pullState.energy * 100) + '%';
@@ -1529,39 +1455,42 @@ function processHands() {
       audio.updateEnergySound(pullState.energy);
       
       pullState.wasActive = true;
+    } else if (dist >= 1000 && pullState.wasActive && pullState.peakEnergy > 0.25) {
+      // BLAST when hands throw apart!
+      audio.stopEnergySound();
+      const cx = (leftData.index.x + rightData.index.x) / 2;
+      const cy = (leftData.index.y + rightData.index.y) / 2;
+      triggerExplosion(cx, cy, pullState.peakEnergy);
+      
+      pullState.energy = 0;
+      pullState.peakEnergy = 0;
+      pullState.wasActive = false;
+      powerMeter.classList.remove('active');
     } else {
       if (pullState.wasActive) audio.stopEnergySound();
-      
-      if (pullState.energy > 0.2 && (leftVel > 15 || rightVel > 15)) {
-        const cx = (leftData.palm.x + rightData.palm.x) / 2;
-        const cy = (leftData.palm.y + rightData.palm.y) / 2;
-        triggerExplosion(cx, cy, pullState.energy);
-        targetEyeIntensity = 1;
-        setTimeout(() => { targetEyeIntensity = 0; }, 150);
-      }
       pullState.energy = 0;
       pullState.peakEnergy = 0;
       pullState.wasActive = false;
       powerMeter.classList.remove('active');
     }
   } else {
-    if (pullState.wasActive) {
+    // Hands separated - check if was charging and throw blast
+    if (pullState.wasActive && pullState.peakEnergy > 0.25 && (leftVel > 25 || rightVel > 25)) {
       audio.stopEnergySound();
-      pullState.wasActive = false;
+      
+      let cx = W / 2, cy = H / 2;
+      if (leftData) { cx = leftData.index.x; cy = leftData.index.y; }
+      else if (rightData) { cx = rightData.index.x; cy = rightData.index.y; }
+      
+      triggerExplosion(cx, cy, pullState.peakEnergy);
+    } else if (pullState.wasActive) {
+      audio.stopEnergySound();
     }
+    
+    pullState.wasActive = false;
+    pullState.energy = 0;
     pullState.peakEnergy *= 0.95;
-    targetEyeIntensity = pullState.peakEnergy * 0.2;
     powerMeter.classList.remove('active');
-  }
-  
-  // Fist blast
-  if (!pullState.active) {
-    if (leftData && leftData.gesture === 'fist' && leftVel > 35) {
-      triggerExplosion(leftData.palm.x, leftData.palm.y, 0.65);
-    }
-    if (rightData && rightData.gesture === 'fist' && rightVel > 35) {
-      triggerExplosion(rightData.palm.x, rightData.palm.y, 0.65);
-    }
   }
 }
 
