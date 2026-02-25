@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmegaEffects</title>
+  <link rel="shortcut icon" href="helmet.png" type="image/x-icon">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; font-family: 'Georgia', serif; }
+    
+    video {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      object-fit: cover;
+      transform: scaleX(-1);
+    }
+    
+    #overlay {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: radial-gradient(ellipse at center, 
+        rgba(0,0,0,0.25) 0%, 
+        rgba(0,0,0,0.5) 40%, 
+        rgba(0,0,0,0.75) 100%);
+      pointer-events: none;
+      z-index: 1;
+    }
+    
+    canvas {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      pointer-events: none;
+    }
+    
+    #fx { z-index: 10; }
+    #glow { z-index: 5; filter: blur(30px); opacity: 0.7; }
+    #sparks { z-index: 15; }
+    
+    .loading {
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(circle at center, #1a0800, #000);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      transition: opacity 1s ease-out;
+    }
+    
+    .loading.hide { opacity: 0; pointer-events: none; }
+    
+    .loader {
+      width: 100px; height: 100px;
+      border: 4px solid transparent;
+      border-top: 4px solid #ff6600;
+      border-right: 4px solid #ffaa00;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      box-shadow: 0 0 30px rgba(255,100,0,0.5);
+      position: relative;
+    }
+    
+    .loader::before {
+      content: '';
+      position: absolute;
+      inset: 10px;
+      border: 3px solid transparent;
+      border-bottom: 3px solid #ffcc00;
+      border-left: 3px solid #ff8800;
+      border-radius: 50%;
+      animation: spin 1.2s linear reverse infinite;
+    }
+    
+    @keyframes spin { to { transform: rotate(360deg); } }
+    
+    .loading p { 
+      color: #ff9900; 
+      margin-top: 30px; 
+      font-size: 16px; 
+      letter-spacing: 6px; 
+      text-shadow: 0 0 20px rgba(255,150,0,0.5);
+    }
+    
+    #hud {
+      position: fixed;
+      top: 15px; left: 15px;
+      color: #0f0;
+      font: bold 14px monospace;
+      z-index: 100;
+      background: rgba(0,0,0,0.7);
+      padding: 10px 15px;
+      border-radius: 8px;
+      border: 1px solid rgba(0,255,0,0.3);
+    }
+    
+    #tips {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #fff;
+      font: 14px Georgia;
+      background: rgba(0,0,0,0.8);
+      padding: 12px 25px;
+      border-radius: 25px;
+      z-index: 100;
+      border: 1px solid rgba(255,150,0,0.3);
+      text-align: center;
+    }
+    
+    #tips span { color: #ffcc00; font-weight: bold; }
+    
+    #gesture {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      color: #ffaa00;
+      font: bold 14px monospace;
+      z-index: 100;
+      background: rgba(0,0,0,0.7);
+      padding: 10px 15px;
+      border-radius: 8px;
+      border: 1px solid rgba(255,150,0,0.3);
+    }
+  </style>
+</head>
+<body>
+
+<div class="loading" id="loader">
+  <div class="loader"></div>
+  <p>AWAKENING THE MYSTIC ARTS</p>
+</div>
+
+<div id="hud">FPS: <span id="fps">0</span></div>
+<div id="gesture">Gesture: <span id="gestureType">None</span></div>
+
+<div id="tips">
+  <span>☝️ One Finger</span> = Draw Portal &nbsp;|&nbsp;
+  <span>🖐️ Open Palm</span> = Mandala Shield &nbsp;|&nbsp;
+  <span>🤲 Two Hands Pull</span> = Energy Stream &nbsp;|&nbsp;
+  <span>✊ Fist + Wave</span> = Energy Blast
+</div>
+
+<video id="cam" playsinline></video>
+<div id="overlay"></div>
+<canvas id="glow"></canvas>
+<canvas id="fx"></canvas>
+<canvas id="sparks"></canvas>
+
+
+<script src="script.js"></script>
+</body>
+</html>
