@@ -3,9 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OmegaEffects</title>
+  <title>OmegaEffects - Final Edition</title>
   <link rel="shortcut icon" href="helmet.png" type="image/x-icon">
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -26,9 +27,9 @@
       width: 100vw;
       height: 100vh;
       background: radial-gradient(ellipse at center, 
-        rgba(0,0,0,0.25) 0%, 
-        rgba(0,0,0,0.5) 40%, 
-        rgba(0,0,0,0.75) 100%);
+        rgba(0,0,0,0.15) 0%, 
+        rgba(0,0,0,0.35) 50%, 
+        rgba(0,0,0,0.6) 100%);
       pointer-events: none;
       z-index: 1;
     }
@@ -42,13 +43,14 @@
     }
     
     #fx { z-index: 10; }
-    #glow { z-index: 5; filter: blur(30px); opacity: 0.7; }
+    #glow { z-index: 5; filter: blur(25px); opacity: 0.6; }
     #sparks { z-index: 15; }
+    #eyes { z-index: 20; }
     
     .loading {
       position: fixed;
       inset: 0;
-      background: radial-gradient(circle at center, #1a0800, #000);
+      background: radial-gradient(circle at center, #0a0a15, #000);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -62,11 +64,11 @@
     .loader {
       width: 100px; height: 100px;
       border: 4px solid transparent;
-      border-top: 4px solid #ff6600;
-      border-right: 4px solid #ffaa00;
+      border-top: 4px solid #88ccff;
+      border-right: 4px solid #aaddff;
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
-      box-shadow: 0 0 30px rgba(255,100,0,0.5);
+      box-shadow: 0 0 30px rgba(100,180,255,0.5);
       position: relative;
     }
     
@@ -75,8 +77,8 @@
       position: absolute;
       inset: 10px;
       border: 3px solid transparent;
-      border-bottom: 3px solid #ffcc00;
-      border-left: 3px solid #ff8800;
+      border-bottom: 3px solid #cceeFF;
+      border-left: 3px solid #66aaff;
       border-radius: 50%;
       animation: spin 1.2s linear reverse infinite;
     }
@@ -84,11 +86,11 @@
     @keyframes spin { to { transform: rotate(360deg); } }
     
     .loading p { 
-      color: #ff9900; 
+      color: #88ccff; 
       margin-top: 30px; 
       font-size: 16px; 
       letter-spacing: 6px; 
-      text-shadow: 0 0 20px rgba(255,150,0,0.5);
+      text-shadow: 0 0 20px rgba(100,180,255,0.5);
     }
     
     #hud {
@@ -109,28 +111,57 @@
       left: 50%;
       transform: translateX(-50%);
       color: #fff;
-      font: 14px Georgia;
-      background: rgba(0,0,0,0.8);
+      font: 13px Georgia;
+      background: rgba(0,0,0,0.85);
       padding: 12px 25px;
       border-radius: 25px;
       z-index: 100;
-      border: 1px solid rgba(255,150,0,0.3);
+      border: 1px solid rgba(100,180,255,0.4);
       text-align: center;
+      max-width: 95vw;
     }
     
-    #tips span { color: #ffcc00; font-weight: bold; }
+    #tips span { color: #88ccff; font-weight: bold; }
+    #tips .fire { color: #ff6644; }
     
     #gesture {
       position: fixed;
       top: 15px;
       right: 15px;
-      color: #ffaa00;
+      color: #88ccff;
       font: bold 14px monospace;
       z-index: 100;
       background: rgba(0,0,0,0.7);
       padding: 10px 15px;
       border-radius: 8px;
-      border: 1px solid rgba(255,150,0,0.3);
+      border: 1px solid rgba(100,180,255,0.3);
+    }
+    
+    #powerMeter {
+      position: fixed;
+      bottom: 75px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 250px;
+      height: 6px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 3px;
+      border: 1px solid rgba(100,180,255,0.4);
+      z-index: 100;
+      overflow: hidden;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    
+    #powerMeter.active { opacity: 1; }
+    
+    #powerFill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #4488cc, #66aadd, #88ccff, #aaeeff, #ffffff);
+      border-radius: 3px;
+      transition: width 0.1s;
+      box-shadow: 0 0 15px rgba(100,200,255,0.6);
     }
   </style>
 </head>
@@ -144,11 +175,15 @@
 <div id="hud">FPS: <span id="fps">0</span></div>
 <div id="gesture">Gesture: <span id="gestureType">None</span></div>
 
+<div id="powerMeter">
+  <div id="powerFill"></div>
+</div>
+
 <div id="tips">
-  <span>☝️ One Finger</span> = Draw Portal &nbsp;|&nbsp;
-  <span>🖐️ Open Palm</span> = Mandala Shield &nbsp;|&nbsp;
-  <span>🤲 Two Hands Pull</span> = Energy Stream &nbsp;|&nbsp;
-  <span>✊ Fist + Wave</span> = Energy Blast
+  <span class="fire">☝️ Point</span> = Fire Portal &nbsp;|&nbsp;
+  <span class="fire">🖐️ Palm</span> = Fire Shield &nbsp;|&nbsp;
+  <span>🤲 Two Hands</span> = 🌬️ Air Wave &nbsp;|&nbsp;
+  <span class="fire">✊ Fist</span> = Blast
 </div>
 
 <video id="cam" playsinline></video>
@@ -156,8 +191,1433 @@
 <canvas id="glow"></canvas>
 <canvas id="fx"></canvas>
 <canvas id="sparks"></canvas>
+<canvas id="eyes"></canvas>
 
+<script>
+// === AUDIO SYSTEM ===
+class AudioSystem {
+  constructor() {
+    this.ctx = null;
+    this.initialized = false;
+    this.shieldPlaying = { left: false, right: false };
+    this.energyOsc = null;
+  }
+  
+  init() {
+    if (this.initialized) return;
+    try {
+      this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      this.initialized = true;
+    } catch(e) {}
+  }
+  
+  playShieldSound(side) {
+    if (!this.initialized || !this.ctx || this.shieldPlaying[side]) return;
+    this.shieldPlaying[side] = true;
+    
+    const now = this.ctx.currentTime;
+    const osc1 = this.ctx.createOscillator();
+    const osc2 = this.ctx.createOscillator();
+    const masterGain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+    
+    osc1.type = 'sine'; osc1.frequency.setValueAtTime(80, now); osc1.frequency.exponentialRampToValueAtTime(120, now + 0.3);
+    osc2.type = 'triangle'; osc2.frequency.setValueAtTime(200, now); osc2.frequency.exponentialRampToValueAtTime(300, now + 0.2);
+    
+    filter.type = 'lowpass'; filter.frequency.setValueAtTime(1500, now); filter.Q.value = 2;
+    masterGain.gain.setValueAtTime(0, now); masterGain.gain.linearRampToValueAtTime(0.12, now + 0.05); masterGain.gain.linearRampToValueAtTime(0, now + 0.5);
+    
+    osc1.connect(filter); osc2.connect(filter);
+    filter.connect(masterGain); masterGain.connect(this.ctx.destination);
+    
+    osc1.start(now); osc2.start(now);
+    osc1.stop(now + 0.5); osc2.stop(now + 0.5);
+    
+    setTimeout(() => { this.shieldPlaying[side] = false; }, 500);
+  }
+  
+  playPortalSound() {
+    if (!this.initialized || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(350, now + 0.2);
+    gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(0.15, now + 0.05); gain.gain.linearRampToValueAtTime(0, now + 0.4);
+    osc.connect(gain); gain.connect(this.ctx.destination);
+    osc.start(now); osc.stop(now + 0.4);
+  }
+  
+  playPortalCloseSound() {
+    if (!this.initialized || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(80, now + 0.25);
+    gain.gain.setValueAtTime(0.12, now); gain.gain.linearRampToValueAtTime(0, now + 0.25);
+    osc.connect(gain); gain.connect(this.ctx.destination);
+    osc.start(now); osc.stop(now + 0.25);
+  }
+  
+  startEnergySound() {
+    if (!this.initialized || !this.ctx || this.energyOsc) return;
+    const now = this.ctx.currentTime;
+    this.energyOsc = { oscs: [], master: this.ctx.createGain() };
+    
+    [120, 180, 250].forEach((freq, i) => {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      osc.connect(this.energyOsc.master);
+      osc.start(now);
+      this.energyOsc.oscs.push(osc);
+    });
+    
+    this.energyOsc.master.gain.value = 0;
+    this.energyOsc.master.connect(this.ctx.destination);
+  }
+  
+  updateEnergySound(intensity) {
+    if (!this.energyOsc) return;
+    this.energyOsc.master.gain.value = intensity * 0.06;
+    this.energyOsc.oscs.forEach((osc, i) => {
+      osc.frequency.value = [120, 180, 250][i] + Math.sin(Date.now() * 0.004 + i) * 12 * intensity;
+    });
+  }
+  
+  stopEnergySound() {
+    if (!this.energyOsc) return;
+    const now = this.ctx.currentTime;
+    this.energyOsc.master.gain.linearRampToValueAtTime(0, now + 0.12);
+    setTimeout(() => {
+      if (this.energyOsc) {
+        this.energyOsc.oscs.forEach(osc => { try { osc.stop(); } catch(e) {} });
+        this.energyOsc = null;
+      }
+    }, 120);
+  }
+  
+  playExplosionSound(power) {
+    if (!this.initialized || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100 * power, now); osc.frequency.exponentialRampToValueAtTime(25, now + 0.25);
+    gain.gain.setValueAtTime(0.2 * power, now); gain.gain.exponentialRampToValueAtTime(0.01, now + 0.35);
+    osc.connect(gain); gain.connect(this.ctx.destination);
+    osc.start(now); osc.stop(now + 0.35);
+  }
+}
 
-<script src="script.js"></script>
+const audio = new AudioSystem();
+document.addEventListener('click', () => audio.init(), { once: true });
+document.addEventListener('touchstart', () => audio.init(), { once: true });
+
+// === CONFIG ===
+const CONFIG = {
+  MAX_PARTICLES: 400,
+  MAX_SPARKS: 350,
+  MAX_EMBERS: 300,
+  MAX_LIGHTNING: 35,
+  MANDALA_SEGMENTS: 24,
+  PORTAL_RINGS: 5
+};
+
+const RUNES = 'ᚠᚢᚦᚨᚱᚲᚷᚹᚺᚾᛁᛃᛇᛈᛉᛊᛏᛒᛖᛗᛚᛜᛞᛟᚪᚫᚣᛠ';
+const SYMBOLS = '⍟⎈⌬⏣⎔⏢⌖⍜⎊⏥◈◇△▽⬡⬢✧⚝☉☽♄♃♂☿♀⚹✴❋';
+const SACRED = '☯☸✡⚛⚕♾∞◎⊕⊗⊙◉⦿⊚⊛⊜⊝';
+
+// === SETUP ===
+const cam = document.getElementById('cam');
+const fx = document.getElementById('fx');
+const glow = document.getElementById('glow');
+const sparksCanvas = document.getElementById('sparks');
+const eyesCanvas = document.getElementById('eyes');
+const c = fx.getContext('2d');
+const g = glow.getContext('2d');
+const s = sparksCanvas.getContext('2d');
+const e = eyesCanvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = innerWidth; H = innerHeight;
+  fx.width = W; fx.height = H;
+  sparksCanvas.width = W; sparksCanvas.height = H;
+  eyesCanvas.width = W; eyesCanvas.height = H;
+  glow.width = W >> 1; glow.height = H >> 1;
+}
+resize();
+addEventListener('resize', resize);
+
+// === STATE ===
+let time = 0;
+let leftHand = null, rightHand = null;
+let leftData = null, rightData = null;
+let prevLeftPos = null, prevRightPos = null;
+let faceData = null;
+let leftEyeData = null, rightEyeData = null;
+
+let particles = [];
+let sparks = [];
+let embers = [];
+let portals = [];
+let lightnings = [];
+let eyeEmbers = [];
+
+let flash = 0, shake = 0;
+let pullState = { active: false, distance: 0, energy: 0, peakEnergy: 0, wasActive: false };
+let targetEyeIntensity = 0;
+let leftShieldActive = false, rightShieldActive = false;
+let frames = 0, lastSec = 0;
+
+// === HAND DATA ===
+function getHandData(landmarks) {
+  if (!landmarks) return null;
+  
+  const palm = landmarks[9];
+  const wrist = landmarks[0];
+  const thumb = landmarks[4];
+  const index = landmarks[8];
+  const middle = landmarks[12];
+  const ring = landmarks[16];
+  const pinky = landmarks[20];
+  
+  const fingerTips = [thumb, index, middle, ring, pinky];
+  const fingersExtended = [];
+  
+  const thumbExtended = Math.abs(thumb.x - wrist.x) > Math.abs(landmarks[2].x - wrist.x) * 1.2;
+  fingersExtended.push(thumbExtended);
+  
+  for (let i = 1; i < 5; i++) {
+    const tipY = fingerTips[i].y;
+    const pipY = landmarks[5 + (i-1) * 4 + 1].y;
+    fingersExtended.push(tipY < pipY - 0.02);
+  }
+  
+  const extendedCount = fingersExtended.filter(Boolean).length;
+  
+  let gesture = 'none';
+  if (extendedCount === 0) gesture = 'fist';
+  else if (extendedCount === 1 && fingersExtended[1]) gesture = 'pointing';
+  else if (extendedCount >= 4) gesture = 'openPalm';
+  else gesture = 'partial';
+  
+  const palmPos = { x: (1 - palm.x) * W, y: palm.y * H };
+  const indexPos = { x: (1 - index.x) * W, y: index.y * H };
+  const palmSize = Math.hypot((landmarks[5].x - landmarks[17].x) * W, (landmarks[5].y - landmarks[17].y) * H);
+  
+  return { palm: palmPos, index: indexPos, gesture, palmSize };
+}
+
+// === EYE DATA ===
+function getDetailedEyeData(faceLandmarks) {
+  if (!faceLandmarks) return { left: null, right: null };
+  
+  const leftContour = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246];
+  const leftIris = [468, 469, 470, 471, 472];
+  const rightContour = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398];
+  const rightIris = [473, 474, 475, 476, 477];
+  
+  function processEye(contourIdx, irisIdx) {
+    let cx = 0, cy = 0, minX = 1, maxX = 0;
+    contourIdx.forEach(i => {
+      const p = faceLandmarks[i];
+      cx += p.x; cy += p.y;
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    });
+    cx = (1 - cx / contourIdx.length) * W;
+    cy = (cy / contourIdx.length) * H;
+    const width = (maxX - minX) * W;
+    
+    let irisX = cx, irisY = cy, irisSize = width * 0.35;
+    if (irisIdx && faceLandmarks[irisIdx[0]]) {
+      let ix = 0, iy = 0;
+      irisIdx.forEach(i => { if (faceLandmarks[i]) { ix += faceLandmarks[i].x; iy += faceLandmarks[i].y; } });
+      irisX = (1 - ix / irisIdx.length) * W;
+      irisY = (iy / irisIdx.length) * H;
+    }
+    const contourPoints = contourIdx.map(i => ({ x: (1 - faceLandmarks[i].x) * W, y: faceLandmarks[i].y * H }));
+    return { irisX, irisY, irisSize, contour: contourPoints };
+  }
+  
+  return { left: processEye(leftContour, leftIris), right: processEye(rightContour, rightIris) };
+}
+
+// === PARTICLES ===
+function addParticle(x, y, vx, vy, size, life, hue) {
+  if (particles.length >= CONFIG.MAX_PARTICLES) particles.shift();
+  particles.push({ x, y, vx, vy, size, life, maxLife: life, hue, flickerPhase: Math.random() * Math.PI * 2 });
+}
+
+function addSpark(x, y, vx, vy, hue, size = 3) {
+  if (sparks.length >= CONFIG.MAX_SPARKS) sparks.shift();
+  sparks.push({ x, y, vx, vy, life: 1, hue, size, trail: [{ x, y }], flickerSpeed: 5 + Math.random() * 10 });
+}
+
+function addEmber(x, y, vx, vy, hue = null) {
+  if (embers.length >= CONFIG.MAX_EMBERS) embers.shift();
+  embers.push({ x, y, vx, vy, life: 1, size: 2 + Math.random() * 4, hue: hue !== null ? hue : 25 + Math.random() * 25, wobble: Math.random() * Math.PI * 2, wobbleSpeed: 2 + Math.random() * 3 });
+}
+
+function addEyeEmber(x, y, vx, vy) {
+  if (eyeEmbers.length >= 50) eyeEmbers.shift();
+  eyeEmbers.push({ x, y, vx, vy, life: 1, size: 1 + Math.random() * 2, hue: Math.random() * 15 });
+}
+
+function addLightning(x1, y1, x2, y2, branches = 3, hue = 200) {
+  if (lightnings.length >= CONFIG.MAX_LIGHTNING) lightnings.shift();
+  lightnings.push({ points: generateLightningPoints(x1, y1, x2, y2, branches), life: 1, hue });
+}
+
+function generateLightningPoints(x1, y1, x2, y2, depth) {
+  if (depth === 0) return [{ x: x1, y: y1 }, { x: x2, y: y2 }];
+  const midX = (x1 + x2) / 2 + (Math.random() - 0.5) * Math.abs(x2 - x1) * 0.35;
+  const midY = (y1 + y2) / 2 + (Math.random() - 0.5) * Math.abs(y2 - y1) * 0.35;
+  const left = generateLightningPoints(x1, y1, midX, midY, depth - 1);
+  const right = generateLightningPoints(midX, midY, x2, y2, depth - 1);
+  return [...left, ...right.slice(1)];
+}
+
+function dismissPortal(portal) {
+  for (let i = 0; i < 25; i++) {
+    const angle = (i / 25) * Math.PI * 2;
+    const dist = portal.r * 0.6;
+    addSpark(portal.x + Math.cos(angle) * dist, portal.y + Math.sin(angle) * dist, (portal.x - (portal.x + Math.cos(angle) * dist)) * 0.06, (portal.y - (portal.y + Math.sin(angle) * dist)) * 0.06, 10 + Math.random() * 15, 2);
+  }
+  flash = 0.25;
+  audio.init();
+  audio.playPortalCloseSound();
+}
+
+// === RED MYSTIC EYES ===
+class MysticEyes {
+  constructor() {
+    this.intensity = 0;
+    this.flickerPhase = 0;
+    this.pulsePhase = 0;
+  }
+  
+  update(intensity, dt) {
+    this.intensity += (intensity - this.intensity) * 0.12;
+    this.flickerPhase += dt * 25;
+    this.pulsePhase += dt * 4;
+    
+    if (this.intensity > 0.2 && leftEyeData && rightEyeData) {
+      if (Math.random() < this.intensity * 0.2) {
+        const eye = Math.random() > 0.5 ? leftEyeData : rightEyeData;
+        addEyeEmber(eye.irisX + (Math.random() - 0.5) * eye.irisSize * 0.4, eye.irisY - eye.irisSize * 0.25, (Math.random() - 0.5) * 0.3, -0.6 - Math.random() * 1);
+      }
+    }
+  }
+  
+  drawEye(eyeData, ctx) {
+    if (!eyeData || this.intensity < 0.01) return;
+    
+    const { irisX, irisY, irisSize, contour } = eyeData;
+    const intensity = this.intensity;
+    const flickerVal = Math.sin(this.flickerPhase) * 0.1 + 0.9;
+    const pulseVal = Math.sin(this.pulsePhase) * 0.05 + 1;
+    
+    ctx.save();
+    ctx.beginPath();
+    if (contour && contour.length > 0) {
+      ctx.moveTo(contour[0].x, contour[0].y);
+      for (let i = 1; i < contour.length; i++) ctx.lineTo(contour[i].x, contour[i].y);
+      ctx.closePath();
+      ctx.clip();
+    }
+    
+    const baseGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * 1.5);
+    baseGlow.addColorStop(0, `hsla(0, 100%, 88%, ${intensity * 0.85 * flickerVal})`);
+    baseGlow.addColorStop(0.25, `hsla(5, 100%, 65%, ${intensity * 0.7 * flickerVal})`);
+    baseGlow.addColorStop(0.5, `hsla(0, 100%, 42%, ${intensity * 0.45})`);
+    baseGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = baseGlow;
+    ctx.beginPath();
+    ctx.ellipse(irisX, irisY, irisSize * 1.5, irisSize * 1.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    const irisGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * pulseVal);
+    irisGlow.addColorStop(0, `hsla(15, 100%, 92%, ${intensity})`);
+    irisGlow.addColorStop(0.5, `hsla(5, 100%, 65%, ${intensity * 0.7})`);
+    irisGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = irisGlow;
+    ctx.beginPath();
+    ctx.arc(irisX, irisY, irisSize * pulseVal, 0, Math.PI * 2);
+    ctx.fill();
+    
+    const pupilGlow = ctx.createRadialGradient(irisX, irisY, 0, irisX, irisY, irisSize * 0.32);
+    pupilGlow.addColorStop(0, `hsla(20, 100%, 98%, ${intensity})`);
+    pupilGlow.addColorStop(0.7, `hsla(10, 100%, 75%, ${intensity * 0.6})`);
+    pupilGlow.addColorStop(1, `hsla(5, 100%, 50%, ${intensity * 0.25})`);
+    ctx.fillStyle = pupilGlow;
+    ctx.beginPath();
+    ctx.arc(irisX, irisY, irisSize * 0.32, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore();
+    
+    const outerGlow = ctx.createRadialGradient(irisX, irisY, irisSize * 0.4, irisX, irisY, irisSize * 2);
+    outerGlow.addColorStop(0, `hsla(0, 100%, 48%, ${intensity * 0.08})`);
+    outerGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = outerGlow;
+    ctx.beginPath();
+    ctx.arc(irisX, irisY, irisSize * 2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    g.fillStyle = `hsla(0, 100%, 42%, ${intensity * 0.15})`;
+    g.beginPath();
+    g.arc(irisX / 2, irisY / 2, irisSize * 0.6, 0, Math.PI * 2);
+    g.fill();
+  }
+  
+  draw() {
+    if (this.intensity < 0.01) return;
+    this.drawEye(leftEyeData, e);
+    this.drawEye(rightEyeData, e);
+    
+    eyeEmbers.forEach((em, idx) => {
+      em.y += em.vy;
+      em.x += em.vx + Math.sin(time * 7 + idx) * 0.2;
+      em.vy *= 0.98;
+      em.life -= 0.025;
+      
+      if (em.life > 0) {
+        const emGrad = e.createRadialGradient(em.x, em.y, 0, em.x, em.y, em.size * 1.8);
+        emGrad.addColorStop(0, `hsla(${em.hue + 10}, 100%, 88%, ${em.life * this.intensity})`);
+        emGrad.addColorStop(1, 'transparent');
+        e.fillStyle = emGrad;
+        e.beginPath();
+        e.arc(em.x, em.y, em.size * 1.8, 0, Math.PI * 2);
+        e.fill();
+      }
+    });
+    
+    for (let i = eyeEmbers.length - 1; i >= 0; i--) {
+      if (eyeEmbers[i].life <= 0) eyeEmbers.splice(i, 1);
+    }
+  }
+}
+
+// === RED PORTAL (ORIGINAL STYLE) ===
+class Portal {
+  constructor(x, y, r) {
+    this.x = x; this.y = y; this.r = 0;
+    this.targetR = Math.max(100, Math.min(250, r));
+    this.rot = 0; this.life = 1; this.age = 0;
+    this.runeOffset = Math.random() * RUNES.length;
+    this.pulsePhase = Math.random() * Math.PI * 2;
+    this.closing = false;
+  }
+  
+  close() { this.closing = true; }
+  
+  update(dt) {
+    this.age += dt;
+    this.rot += 0.025;
+    
+    if (this.closing) {
+      this.life -= 0.08;
+      this.r *= 0.92;
+    } else {
+      this.r += (this.targetR - this.r) * 0.08;
+      if (this.age > 12) this.life -= 0.01;
+    }
+    
+    if (Math.random() < 0.5 && this.life > 0.3 && !this.closing) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = this.r * (0.9 + Math.random() * 0.2);
+      addEmber(this.x + Math.cos(angle) * dist, this.y + Math.sin(angle) * dist, Math.cos(angle) * 2, Math.sin(angle) * 2 - Math.random() * 3, Math.random() * 15);
+    }
+  }
+  
+  draw() {
+    if (this.life <= 0 || this.r < 10) return;
+    const { x, y, r, rot, life } = this;
+    const pulse = 1 + Math.sin(time * 4 + this.pulsePhase) * 0.03;
+    const rr = r * pulse;
+    
+    c.save();
+    c.globalAlpha = Math.min(1, life, this.r / 40);
+    c.translate(x, y);
+    
+    // Fire ring
+    const flames = 48;
+    for (let i = 0; i < flames; i++) {
+      const a = (i / flames) * Math.PI * 2 + time * 0.3;
+      const flicker = Math.sin(time * 12 + i * 2.1) * 0.4 + 0.6;
+      const h = (30 + Math.sin(time * 6 + i * 1.3) * 15) * flicker;
+      
+      c.save();
+      c.rotate(a);
+      c.translate(rr, 0);
+      c.rotate(Math.PI / 2);
+      
+      for (let layer = 0; layer < 4; layer++) {
+        const grad = c.createLinearGradient(0, 0, 0, h * (1 - layer * 0.15));
+        const alpha = (1 - layer * 0.25) * life * flicker;
+        grad.addColorStop(0, `hsla(${15 - layer * 4}, 100%, ${95 - layer * 15}%, ${alpha})`);
+        grad.addColorStop(0.3, `hsla(${8 - layer * 3}, 100%, ${70 - layer * 12}%, ${alpha * 0.8})`);
+        grad.addColorStop(0.7, `hsla(${0}, 100%, ${50 - layer * 10}%, ${alpha * 0.4})`);
+        grad.addColorStop(1, 'transparent');
+        
+        c.fillStyle = grad;
+        c.beginPath();
+        const w = 10 - layer * 2;
+        c.moveTo(-w, 0);
+        c.bezierCurveTo(-w * 0.5, h * 0.3, -w * 0.3, h * 0.7, 0, h * (1 - layer * 0.15));
+        c.bezierCurveTo(w * 0.3, h * 0.7, w * 0.5, h * 0.3, w, 0);
+        c.fill();
+      }
+      c.restore();
+    }
+    
+    // Rings
+    for (let i = 0; i < CONFIG.PORTAL_RINGS; i++) {
+      const ringR = rr * (0.4 + i * 0.1);
+      const ringRot = rot * (2 - i * 0.25) * (i % 2 ? 1 : -1);
+      const ringAlpha = (1 - i * 0.12) * life;
+      
+      c.save();
+      c.rotate(ringRot);
+      c.shadowColor = `hsla(0, 100%, 50%, 0.6)`;
+      c.shadowBlur = 12 - i * 2;
+      c.strokeStyle = `hsla(${5 + i * 2}, 100%, ${75 - i * 5}%, ${ringAlpha})`;
+      c.lineWidth = 3 - i * 0.3;
+      c.setLineDash([ringR * 0.12, ringR * 0.05]);
+      c.lineDashOffset = time * 50 * (i % 2 ? 1 : -1);
+      c.beginPath();
+      c.arc(0, 0, ringR, 0, Math.PI * 2);
+      c.stroke();
+      c.setLineDash([]);
+      c.shadowBlur = 0;
+      c.restore();
+    }
+    
+    // Runes
+    c.save();
+    c.rotate(-rot * 0.4);
+    const runeR = rr * 0.75;
+    c.font = `bold ${rr * 0.08}px Georgia`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const rx = Math.cos(a) * runeR;
+      const ry = Math.sin(a) * runeR;
+      const glow = Math.sin(time * 3 + i * 0.5) * 0.3 + 0.7;
+      
+      c.save();
+      c.translate(rx, ry);
+      c.rotate(a + Math.PI / 2);
+      c.fillStyle = `hsla(${5 + glow * 10}, 100%, ${70 + glow * 20}%, ${life * glow})`;
+      c.shadowColor = `hsla(0, 100%, 60%, ${life})`;
+      c.shadowBlur = 10;
+      c.fillText(RUNES[(Math.floor(this.runeOffset) + i) % RUNES.length], 0, 0);
+      c.restore();
+    }
+    c.shadowBlur = 0;
+    c.restore();
+    
+    // Void center
+    const voidSize = rr * 0.38;
+    const voidGrad = c.createRadialGradient(0, 0, 0, 0, 0, voidSize);
+    voidGrad.addColorStop(0, `rgba(0, 0, 0, ${life})`);
+    voidGrad.addColorStop(0.5, `rgba(10, 0, 0, ${life * 0.9})`);
+    voidGrad.addColorStop(0.8, `hsla(0, 100%, 15%, ${life * 0.6})`);
+    voidGrad.addColorStop(1, 'transparent');
+    c.fillStyle = voidGrad;
+    c.beginPath();
+    c.arc(0, 0, voidSize, 0, Math.PI * 2);
+    c.fill();
+    
+    const edgeGrad = c.createRadialGradient(0, 0, voidSize * 0.7, 0, 0, voidSize * 1.2);
+    edgeGrad.addColorStop(0, 'transparent');
+    edgeGrad.addColorStop(0.5, `hsla(0, 100%, 40%, ${life * 0.3})`);
+    edgeGrad.addColorStop(1, 'transparent');
+    c.fillStyle = edgeGrad;
+    c.beginPath();
+    c.arc(0, 0, voidSize * 1.2, 0, Math.PI * 2);
+    c.fill();
+    
+    c.save();
+    c.rotate(-time * 0.5);
+    c.font = `${voidSize * 0.5}px serif`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    const symPulse = Math.sin(time * 2) * 0.2 + 0.8;
+    c.fillStyle = `hsla(0, 100%, ${50 + symPulse * 30}%, ${life * symPulse})`;
+    c.shadowColor = `hsla(0, 100%, 50%, ${life})`;
+    c.shadowBlur = 12;
+    c.fillText(SACRED[Math.floor(time * 0.5) % SACRED.length], 0, 0);
+    c.shadowBlur = 0;
+    c.restore();
+    
+    c.restore();
+    
+    g.fillStyle = `hsla(0, 100%, 40%, ${life * 0.6})`;
+    g.beginPath();
+    g.arc(x / 2, y / 2, rr / 2, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+// === RED MANDALA (ORIGINAL STYLE) ===
+class Mandala {
+  constructor(x, y, size, isLeft) {
+    this.x = x; this.y = y;
+    this.size = size * 0.5;
+    this.targetSize = size;
+    this.rot = 0; this.life = 0.8;
+    this.isLeft = isLeft; this.active = true;
+  }
+  
+  update(x, y, size, active) {
+    this.x = x; this.y = y;
+    this.targetSize = size;
+    this.active = active;
+    this.rot += 0.05;
+    
+    if (active) {
+      this.size += (this.targetSize - this.size) * 0.3;
+      this.life = Math.min(1, this.life + 0.2);
+    } else {
+      this.life -= 0.06;
+      this.size *= 0.92;
+    }
+    
+    if (active && Math.random() < 0.5) {
+      const angle = Math.random() * Math.PI * 2;
+      addEmber(this.x + Math.cos(angle) * this.size * 0.95, this.y + Math.sin(angle) * this.size * 0.95, Math.cos(angle) * 3, Math.sin(angle) * 3 - 1, Math.random() * 15);
+    }
+  }
+  
+  draw() {
+    if (this.life <= 0 || this.size < 10) return;
+    const { x, y, size, rot, life } = this;
+    
+    c.save();
+    c.globalAlpha = life;
+    c.translate(x, y);
+    
+    // Outer glow
+    const outerGlow = c.createRadialGradient(0, 0, size * 0.6, 0, 0, size * 1.4);
+    outerGlow.addColorStop(0, 'transparent');
+    outerGlow.addColorStop(0.5, `hsla(0, 100%, 40%, 0.25)`);
+    outerGlow.addColorStop(1, 'transparent');
+    c.fillStyle = outerGlow;
+    c.beginPath();
+    c.arc(0, 0, size * 1.4, 0, Math.PI * 2);
+    c.fill();
+    
+    // Hexagons
+    c.save();
+    c.rotate(rot);
+    for (let layer = 0; layer <= 3; layer++) {
+      const layerSize = size * (1 - layer * 0.2);
+      c.strokeStyle = `hsla(${layer * 5}, 100%, ${60 - layer * 8}%, ${life * (1 - layer * 0.2)})`;
+      c.lineWidth = 3 - layer * 0.5;
+      c.shadowColor = `hsla(0, 100%, 50%, 0.5)`;
+      c.shadowBlur = layer === 0 ? 15 : 0;
+      c.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 - Math.PI / 2;
+        const hx = Math.cos(a) * layerSize * 0.95;
+        const hy = Math.sin(a) * layerSize * 0.95;
+        i === 0 ? c.moveTo(hx, hy) : c.lineTo(hx, hy);
+      }
+      c.closePath();
+      c.stroke();
+      c.shadowBlur = 0;
+      c.rotate(Math.PI / 12);
+    }
+    c.restore();
+    
+    // Triangles
+    c.save();
+    c.rotate(-rot * 1.5);
+    for (let i = 0; i < 2; i++) {
+      c.rotate(Math.PI / 6);
+      c.strokeStyle = `hsla(5, 100%, 65%, ${life * 0.8})`;
+      c.lineWidth = 2;
+      c.beginPath();
+      for (let j = 0; j < 3; j++) {
+        const ta = (j / 3) * Math.PI * 2 - Math.PI / 2;
+        const tx = Math.cos(ta) * size * 0.6;
+        const ty = Math.sin(ta) * size * 0.6;
+        j === 0 ? c.moveTo(tx, ty) : c.lineTo(tx, ty);
+      }
+      c.closePath();
+      c.stroke();
+    }
+    c.restore();
+    
+    // Circles
+    c.save();
+    c.rotate(rot * 0.5);
+    for (let i = 0; i < 4; i++) {
+      const cr = size * (0.3 + i * 0.15);
+      c.strokeStyle = `hsla(${i * 3}, 100%, ${60 - i * 8}%, ${life * (0.8 - i * 0.15)})`;
+      c.lineWidth = 2 - i * 0.3;
+      c.setLineDash([cr * 0.1, cr * 0.05]);
+      c.lineDashOffset = time * 30 * (i % 2 ? 1 : -1);
+      c.beginPath();
+      c.arc(0, 0, cr, 0, Math.PI * 2);
+      c.stroke();
+      c.setLineDash([]);
+    }
+    c.restore();
+    
+    // Runes
+    c.save();
+    c.rotate(-rot * 0.3);
+    c.font = `bold ${size * 0.08}px Georgia`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    
+    for (let i = 0; i < CONFIG.MANDALA_SEGMENTS; i++) {
+      const a = (i / CONFIG.MANDALA_SEGMENTS) * Math.PI * 2;
+      const rx = Math.cos(a) * size * 0.8;
+      const ry = Math.sin(a) * size * 0.8;
+      const glow = Math.sin(time * 4 + i) * 0.3 + 0.7;
+      c.fillStyle = `hsla(${5 + glow * 10}, 100%, ${60 + glow * 25}%, ${life * glow})`;
+      c.shadowColor = `hsla(0, 100%, 50%, ${life})`;
+      c.shadowBlur = 8;
+      c.fillText(RUNES[i % RUNES.length], rx, ry);
+    }
+    c.shadowBlur = 0;
+    c.restore();
+    
+    // Center
+    const centerGrad = c.createRadialGradient(0, 0, 0, 0, 0, size * 0.25);
+    centerGrad.addColorStop(0, `hsla(10, 100%, 90%, ${life})`);
+    centerGrad.addColorStop(0.5, `hsla(0, 100%, 60%, ${life * 0.6})`);
+    centerGrad.addColorStop(1, 'transparent');
+    c.fillStyle = centerGrad;
+    c.beginPath();
+    c.arc(0, 0, size * 0.25, 0, Math.PI * 2);
+    c.fill();
+    
+    c.font = `${size * 0.15}px serif`;
+    c.fillStyle = `hsla(10, 100%, 90%, ${life})`;
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillText(SACRED[Math.floor(time) % SACRED.length], 0, 0);
+    
+    // Spokes
+    c.save();
+    c.rotate(rot * 2);
+    for (let i = 0; i < 12; i++) {
+      const sa = (i / 12) * Math.PI * 2;
+      const gradient = c.createLinearGradient(0, 0, Math.cos(sa) * size, Math.sin(sa) * size);
+      gradient.addColorStop(0, `hsla(10, 100%, 70%, ${life * 0.8})`);
+      gradient.addColorStop(0.5, `hsla(0, 100%, 50%, ${life * 0.4})`);
+      gradient.addColorStop(1, 'transparent');
+      c.strokeStyle = gradient;
+      c.lineWidth = 1.5;
+      c.beginPath();
+      c.moveTo(Math.cos(sa) * size * 0.2, Math.sin(sa) * size * 0.2);
+      c.lineTo(Math.cos(sa) * size * 0.9, Math.sin(sa) * size * 0.9);
+      c.stroke();
+    }
+    c.restore();
+    
+    c.restore();
+    
+    g.fillStyle = `hsla(0, 100%, 45%, ${life * 0.6})`;
+    g.beginPath();
+    g.arc(x / 2, y / 2, size / 2, 0, Math.PI * 2);
+    g.fill();
+  }
+}
+
+// === FIRE TRAIL (ORIGINAL STYLE) ===
+let circleTrail = [];
+
+function drawRealisticFireTrail(trail) {
+  if (trail.length < 2) return;
+  
+  for (let i = Math.max(0, trail.length - 5); i < trail.length; i++) {
+    if (Math.random() < 0.6) {
+      const p = trail[i];
+      addEmber(p.x + (Math.random() - 0.5) * 20, p.y + (Math.random() - 0.5) * 20, (Math.random() - 0.5) * 4, -2 - Math.random() * 5, Math.random() * 15);
+    }
+  }
+  
+  for (let layer = 4; layer >= 0; layer--) {
+    c.save();
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.beginPath();
+    
+    for (let i = 0; i < trail.length; i++) {
+      const p = trail[i];
+      const wobbleX = Math.sin(time * 15 + i * 0.5) * (layer * 2);
+      const wobbleY = Math.cos(time * 12 + i * 0.7) * (layer * 2);
+      if (i === 0) c.moveTo(p.x + wobbleX, p.y + wobbleY);
+      else {
+        const prev = trail[i - 1];
+        c.quadraticCurveTo(prev.x + wobbleX, prev.y + wobbleY, (prev.x + p.x) / 2 + wobbleX, (prev.y + p.y) / 2 + wobbleY);
+      }
+    }
+    
+    const hue = 10 - layer * 3;
+    const lightness = 85 - layer * 15;
+    
+    if (layer === 4) {
+      c.strokeStyle = `hsla(0, 100%, 30%, 0.15)`;
+      c.lineWidth = 60;
+      c.filter = 'blur(20px)';
+      c.stroke();
+      c.filter = 'none';
+    }
+    
+    c.strokeStyle = `hsla(${hue}, 100%, ${lightness}%, ${1 - layer * 0.18})`;
+    c.lineWidth = 4 + layer * 8;
+    if (layer > 2) c.filter = `blur(${layer * 2}px)`;
+    c.stroke();
+    c.filter = 'none';
+    c.restore();
+  }
+  
+  c.save();
+  c.lineCap = 'round';
+  c.beginPath();
+  trail.forEach((p, i) => i === 0 ? c.moveTo(p.x, p.y) : c.lineTo(p.x, p.y));
+  c.strokeStyle = `hsla(15, 100%, 95%, 0.95)`;
+  c.lineWidth = 3;
+  c.stroke();
+  c.restore();
+  
+  if (trail.length > 0) {
+    const tip = trail[trail.length - 1];
+    for (let i = 3; i >= 0; i--) {
+      const size = (50 - i * 10) * (Math.sin(time * 15) * 0.2 + 0.8);
+      const tipGrad = c.createRadialGradient(tip.x, tip.y, 0, tip.x, tip.y, size);
+      tipGrad.addColorStop(0, `hsla(${15 - i * 3}, 100%, ${95 - i * 8}%, ${1 - i * 0.2})`);
+      tipGrad.addColorStop(0.4, `hsla(${5 - i * 2}, 100%, ${65 - i * 12}%, ${0.6 - i * 0.1})`);
+      tipGrad.addColorStop(1, 'transparent');
+      c.fillStyle = tipGrad;
+      c.beginPath();
+      c.arc(tip.x, tip.y, size, 0, Math.PI * 2);
+      c.fill();
+    }
+    
+    if (Math.random() < 0.7) {
+      const angle = Math.random() * Math.PI * 2;
+      addSpark(tip.x, tip.y, Math.cos(angle) * (3 + Math.random() * 5), Math.sin(angle) * (3 + Math.random() * 5) - 2, Math.random() * 15);
+    }
+  }
+  
+  g.strokeStyle = `hsla(0, 100%, 45%, 0.5)`;
+  g.lineWidth = 25;
+  g.lineCap = 'round';
+  g.beginPath();
+  trail.forEach((p, i) => i === 0 ? g.moveTo(p.x / 2, p.y / 2) : g.lineTo(p.x / 2, p.y / 2));
+  g.stroke();
+}
+
+function detectCircle(trail) {
+  if (trail.length < 35) return null;
+  
+  let cx = 0, cy = 0;
+  trail.forEach(p => { cx += p.x; cy += p.y; });
+  cx /= trail.length; cy /= trail.length;
+  
+  let avgR = 0;
+  trail.forEach(p => avgR += Math.hypot(p.x - cx, p.y - cy));
+  avgR /= trail.length;
+  
+  if (avgR < 60) return null;
+  
+  let variance = 0;
+  trail.forEach(p => variance += Math.abs(Math.hypot(p.x - cx, p.y - cy) - avgR));
+  variance /= trail.length;
+  const circularity = 1 - variance / avgR;
+  
+  let totalAngle = 0;
+  for (let i = 1; i < trail.length; i++) {
+    let a1 = Math.atan2(trail[i-1].y - cy, trail[i-1].x - cx);
+    let a2 = Math.atan2(trail[i].y - cy, trail[i].x - cx);
+    let da = a2 - a1;
+    if (da > Math.PI) da -= Math.PI * 2;
+    if (da < -Math.PI) da += Math.PI * 2;
+    totalAngle += da;
+  }
+  
+  if (circularity > 0.55 && Math.abs(totalAngle) / (Math.PI * 2) > 0.7) {
+    return { cx, cy, r: avgR };
+  }
+  return null;
+}
+
+// === 🌬️ LIGHT AIR WAVE ENERGY STREAM ===
+function drawAirWaveStream(x1, y1, x2, y2, intensity) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dist = Math.hypot(dx, dy);
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const angle = Math.atan2(dy, dx);
+  const perpX = -Math.sin(angle);
+  const perpY = Math.cos(angle);
+  
+  // === LIGHT AIR WAVE LINES (THIN & TRANSPARENT) ===
+  const waveCount = 5;
+  
+  for (let w = 0; w < waveCount; w++) {
+    const waveOffset = (w - waveCount / 2) * 8;
+    const wavePhase = w * 0.7;
+    
+    for (let layer = 2; layer >= 0; layer--) {
+      c.save();
+      c.beginPath();
+      
+      const segments = 100;
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const baseX = x1 + dx * t;
+        const baseY = y1 + dy * t;
+        
+        // Smooth sine waves
+        const wave1 = Math.sin(t * Math.PI * 4 + time * 8 + wavePhase) * (12 + w * 3) * intensity;
+        const wave2 = Math.sin(t * Math.PI * 7 + time * 12 + wavePhase * 1.5) * (6 + w * 2) * intensity;
+        
+        // Envelope - fade at ends
+        const envelope = Math.sin(t * Math.PI);
+        
+        const totalWave = (wave1 + wave2) * envelope + waveOffset;
+        
+        const px = baseX + perpX * totalWave;
+        const py = baseY + perpY * totalWave;
+        
+        if (i === 0) c.moveTo(px, py);
+        else c.lineTo(px, py);
+      }
+      
+      // Light blue/white colors - very transparent
+      const alpha = intensity * (0.3 - layer * 0.08) * (1 - w * 0.12);
+      const lightness = 95 - layer * 10;
+      const saturation = 30 + layer * 20;
+      
+      if (layer === 2) {
+        c.strokeStyle = `hsla(200, ${saturation}%, ${lightness - 20}%, ${alpha * 0.4})`;
+        c.lineWidth = 6 - w * 0.5;
+        c.filter = 'blur(4px)';
+      } else if (layer === 1) {
+        c.strokeStyle = `hsla(195, ${saturation}%, ${lightness - 5}%, ${alpha * 0.7})`;
+        c.lineWidth = 3 - w * 0.3;
+        c.filter = 'blur(1px)';
+      } else {
+        c.strokeStyle = `hsla(190, 20%, ${lightness}%, ${alpha})`;
+        c.lineWidth = 1.5 - w * 0.15;
+      }
+      
+      c.lineCap = 'round';
+      c.stroke();
+      c.filter = 'none';
+      c.restore();
+    }
+  }
+  
+  // === BRIGHT CENTER LINE ===
+  c.save();
+  c.beginPath();
+  for (let i = 0; i <= 100; i++) {
+    const t = i / 100;
+    const baseX = x1 + dx * t;
+    const baseY = y1 + dy * t;
+    
+    const wave = Math.sin(t * Math.PI * 3 + time * 10) * 8 * intensity * Math.sin(t * Math.PI);
+    
+    const px = baseX + perpX * wave;
+    const py = baseY + perpY * wave;
+    
+    if (i === 0) c.moveTo(px, py);
+    else c.lineTo(px, py);
+  }
+  c.strokeStyle = `hsla(200, 30%, 98%, ${intensity * 0.5})`;
+  c.lineWidth = 1.5;
+  c.lineCap = 'round';
+  c.stroke();
+  c.restore();
+  
+  // === SMALL LIGHT PARTICLES ===
+  if (Math.random() < 0.3 * intensity) {
+    const t = Math.random();
+    const wave = Math.sin(t * Math.PI * 4 + time * 8) * 20 * intensity * Math.sin(t * Math.PI);
+    const px = x1 + dx * t + perpX * wave + (Math.random() - 0.5) * 15;
+    const py = y1 + dy * t + perpY * wave + (Math.random() - 0.5) * 15;
+    
+    // Light blue particles
+    addSpark(px, py, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2 - 0.5, 190 + Math.random() * 20, 1.5);
+  }
+  
+  // === SUBTLE LIGHTNING ===
+  if (Math.random() < 0.06 * intensity) {
+    addLightning(x1, y1, x2, y2, 2, 195 + Math.random() * 15);
+  }
+  
+  // === HAND GLOWS (LIGHT BLUE) ===
+  [{ x: x1, y: y1 }, { x: x2, y: y2 }].forEach((p, idx) => {
+    const orbSize = 25 + intensity * 30;
+    const orbPulse = 1 + Math.sin(time * 8 + idx * Math.PI) * 0.08;
+    
+    // Soft glow
+    for (let i = 3; i >= 0; i--) {
+      const layerSize = orbSize * orbPulse * (1 + i * 0.35);
+      
+      const gradient = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, layerSize);
+      gradient.addColorStop(0, `hsla(200, 50%, ${98 - i * 8}%, ${intensity * (0.4 - i * 0.08)})`);
+      gradient.addColorStop(0.5, `hsla(195, 40%, ${85 - i * 12}%, ${intensity * (0.2 - i * 0.04)})`);
+      gradient.addColorStop(1, 'transparent');
+      
+      c.fillStyle = gradient;
+      c.beginPath();
+      c.arc(p.x, p.y, layerSize, 0, Math.PI * 2);
+      c.fill();
+    }
+    
+    // Bright core
+    c.fillStyle = `hsla(200, 30%, 98%, ${intensity * 0.6})`;
+    c.beginPath();
+    c.arc(p.x, p.y, 5 + intensity * 3, 0, Math.PI * 2);
+    c.fill();
+  });
+  
+  // === CENTER GLOW ===
+  const centerSize = 20 + intensity * 35;
+  const centerPulse = 1 + Math.sin(time * 6) * 0.1;
+  
+  for (let i = 2; i >= 0; i--) {
+    const layerSize = centerSize * centerPulse * (1 + i * 0.4);
+    const gradient = c.createRadialGradient(mx, my, 0, mx, my, layerSize);
+    gradient.addColorStop(0, `hsla(195, 40%, ${98 - i * 10}%, ${intensity * (0.35 - i * 0.1)})`);
+    gradient.addColorStop(0.6, `hsla(200, 30%, ${85 - i * 15}%, ${intensity * (0.15 - i * 0.04)})`);
+    gradient.addColorStop(1, 'transparent');
+    c.fillStyle = gradient;
+    c.beginPath();
+    c.arc(mx, my, layerSize, 0, Math.PI * 2);
+    c.fill();
+  }
+  
+  // === GLOW LAYER ===
+  g.strokeStyle = `hsla(200, 40%, 70%, ${intensity * 0.2})`;
+  g.lineWidth = 20;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(x1 / 2, y1 / 2);
+  g.lineTo(x2 / 2, y2 / 2);
+  g.stroke();
+  
+  g.fillStyle = `hsla(195, 40%, 75%, ${intensity * 0.25})`;
+  g.beginPath();
+  g.arc(mx / 2, my / 2, centerSize / 2, 0, Math.PI * 2);
+  g.fill();
+}
+
+// === EXPLOSION ===
+function triggerExplosion(x, y, power) {
+  audio.playExplosionSound(power);
+  
+  for (let i = 0; i < Math.floor(70 * power); i++) {
+    const angle = (i / 70) * Math.PI * 2;
+    const speed = (10 + Math.random() * 20) * power;
+    const hue = 20 + Math.random() * 30;
+    addParticle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, 20 + Math.random() * 25, 1, hue);
+  }
+  
+  for (let i = 0; i < Math.floor(50 * power); i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 10 + Math.random() * 25;
+    addSpark(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed - 3, 25 + Math.random() * 25, 3);
+  }
+  
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    addLightning(x, y, x + Math.cos(angle) * (140 + Math.random() * 100), y + Math.sin(angle) * (140 + Math.random() * 100), 3, 35);
+  }
+  
+  flash = power * 0.8;
+  shake = 45 * power;
+}
+
+// === INSTANCES ===
+let leftMandala = null;
+let rightMandala = null;
+const mysticEyes = new MysticEyes();
+
+// === UPDATE ===
+function update(dt) {
+  time += dt;
+  
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.vy += 0.2; p.vx *= 0.96; p.vy *= 0.96;
+    p.x += p.vx; p.y += p.vy;
+    p.life -= dt / p.maxLife;
+    if (p.life <= 0) particles.splice(i, 1);
+  }
+  
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const sp = sparks[i];
+    sp.trail.push({ x: sp.x, y: sp.y });
+    if (sp.trail.length > 12) sp.trail.shift();
+    sp.vy += 0.12; sp.vx *= 0.97; sp.vy *= 0.97;
+    sp.x += sp.vx; sp.y += sp.vy;
+    sp.life -= 0.025;
+    if (sp.life <= 0) sparks.splice(i, 1);
+  }
+  
+  for (let i = embers.length - 1; i >= 0; i--) {
+    const em = embers[i];
+    em.wobble += em.wobbleSpeed * dt;
+    em.x += em.vx + Math.sin(em.wobble) * 0.4;
+    em.y += em.vy;
+    em.vy -= 0.04; em.vx *= 0.99;
+    em.life -= 0.015;
+    if (em.life <= 0 || em.y < -50) embers.splice(i, 1);
+  }
+  
+  for (let i = lightnings.length - 1; i >= 0; i--) {
+    lightnings[i].life -= 0.12;
+    if (lightnings[i].life <= 0) lightnings.splice(i, 1);
+  }
+  
+  for (let i = portals.length - 1; i >= 0; i--) {
+    portals[i].update(dt);
+    if (portals[i].life <= 0 || portals[i].r < 10) portals.splice(i, 1);
+  }
+  
+  mysticEyes.update(targetEyeIntensity, dt);
+  
+  flash *= 0.88;
+  shake *= 0.9;
+}
+
+// === RENDER ===
+function render() {
+  c.clearRect(0, 0, W, H);
+  s.clearRect(0, 0, W, H);
+  e.clearRect(0, 0, W, H);
+  g.clearRect(0, 0, W >> 1, H >> 1);
+  
+  c.save(); s.save(); e.save();
+  if (shake > 0.5) {
+    const sx = (Math.random() - 0.5) * shake;
+    const sy = (Math.random() - 0.5) * shake;
+    c.translate(sx, sy); s.translate(sx, sy); e.translate(sx, sy);
+  }
+  
+  portals.forEach(p => p.draw());
+  if (circleTrail.length > 2) drawRealisticFireTrail(circleTrail);
+  if (leftMandala && leftMandala.life > 0) leftMandala.draw();
+  if (rightMandala && rightMandala.life > 0) rightMandala.draw();
+  
+  if (pullState.active && leftData && rightData) {
+    drawAirWaveStream(leftData.palm.x, leftData.palm.y, rightData.palm.x, rightData.palm.y, pullState.energy);
+  }
+  
+  mysticEyes.draw();
+  
+  lightnings.forEach(l => {
+    if (l.points.length < 2) return;
+    for (let layer = 0; layer < 3; layer++) {
+      s.beginPath();
+      s.moveTo(l.points[0].x, l.points[0].y);
+      l.points.forEach(p => s.lineTo(p.x, p.y));
+      if (layer === 0) { s.strokeStyle = `hsla(${l.hue}, 60%, 50%, ${l.life * 0.25})`; s.lineWidth = 6; }
+      else if (layer === 1) { s.strokeStyle = `hsla(${l.hue}, 50%, 70%, ${l.life * 0.6})`; s.lineWidth = 3; }
+      else { s.strokeStyle = `hsla(${l.hue}, 30%, 95%, ${l.life})`; s.lineWidth = 1; }
+      s.stroke();
+    }
+  });
+  
+  embers.forEach(em => {
+    const flicker = Math.sin(time * em.wobbleSpeed * 3 + em.wobble) * 0.3 + 0.7;
+    const emberGrad = s.createRadialGradient(em.x, em.y, 0, em.x, em.y, em.size * 2);
+    emberGrad.addColorStop(0, `hsla(${em.hue + 12}, 100%, 88%, ${em.life * flicker})`);
+    emberGrad.addColorStop(0.4, `hsla(${em.hue}, 100%, 55%, ${em.life * flicker * 0.5})`);
+    emberGrad.addColorStop(1, 'transparent');
+    s.fillStyle = emberGrad;
+    s.beginPath();
+    s.arc(em.x, em.y, em.size * 2, 0, Math.PI * 2);
+    s.fill();
+  });
+  
+  sparks.forEach(sp => {
+    if (sp.trail.length > 1) {
+      for (let i = 1; i < sp.trail.length; i++) {
+        const t = i / sp.trail.length;
+        s.strokeStyle = `hsla(${sp.hue}, 70%, 70%, ${t * sp.life * 0.6})`;
+        s.lineWidth = sp.size * t;
+        s.lineCap = 'round';
+        s.beginPath();
+        s.moveTo(sp.trail[i-1].x, sp.trail[i-1].y);
+        s.lineTo(sp.trail[i].x, sp.trail[i].y);
+        s.stroke();
+      }
+    }
+    
+    const flicker = Math.sin(time * sp.flickerSpeed) * 0.3 + 0.7;
+    const sparkGrad = s.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, sp.size * 3);
+    sparkGrad.addColorStop(0, `hsla(${sp.hue}, 50%, 95%, ${sp.life * flicker})`);
+    sparkGrad.addColorStop(0.4, `hsla(${sp.hue}, 60%, 65%, ${sp.life * flicker * 0.4})`);
+    sparkGrad.addColorStop(1, 'transparent');
+    s.fillStyle = sparkGrad;
+    s.beginPath();
+    s.arc(sp.x, sp.y, sp.size * 3, 0, Math.PI * 2);
+    s.fill();
+  });
+  
+  particles.forEach(p => {
+    const alpha = Math.min(1, p.life * 2);
+    const size = p.size * p.life;
+    const flicker = Math.sin(time * 10 + p.flickerPhase) * 0.2 + 0.8;
+    
+    const grad = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, size);
+    grad.addColorStop(0, `hsla(${p.hue + 15}, 100%, 92%, ${alpha * flicker})`);
+    grad.addColorStop(0.3, `hsla(${p.hue}, 100%, 58%, ${alpha * flicker * 0.5})`);
+    grad.addColorStop(1, 'transparent');
+    c.fillStyle = grad;
+    c.beginPath();
+    c.arc(p.x, p.y, size, 0, Math.PI * 2);
+    c.fill();
+    
+    g.fillStyle = `hsla(${p.hue}, 100%, 48%, ${alpha * 0.2})`;
+    g.beginPath();
+    g.arc(p.x / 2, p.y / 2, size / 2, 0, Math.PI * 2);
+    g.fill();
+  });
+  
+  c.restore(); s.restore(); e.restore();
+  
+  if (flash > 0.01) {
+    c.fillStyle = `hsla(200, 50%, 80%, ${flash * 0.25})`;
+    c.fillRect(0, 0, W, H);
+  }
+}
+
+// === PROCESS HANDS ===
+function processHands() {
+  leftData = getHandData(leftHand);
+  rightData = getHandData(rightHand);
+  
+  let gestureText = 'None';
+  if (leftData) gestureText = `L: ${leftData.gesture}`;
+  if (rightData) gestureText += ` R: ${rightData.gesture}`;
+  document.getElementById('gestureType').textContent = gestureText;
+  
+  let leftVel = 0, rightVel = 0;
+  if (leftData && prevLeftPos) leftVel = Math.hypot(leftData.palm.x - prevLeftPos.x, leftData.palm.y - prevLeftPos.y);
+  if (rightData && prevRightPos) rightVel = Math.hypot(rightData.palm.x - prevRightPos.x, rightData.palm.y - prevRightPos.y);
+  
+  prevLeftPos = leftData ? { ...leftData.palm } : null;
+  prevRightPos = rightData ? { ...rightData.palm } : null;
+  
+  // Portal drawing
+  const leftPointing = leftData && leftData.gesture === 'pointing';
+  const rightPointing = rightData && rightData.gesture === 'pointing';
+  
+  if (leftPointing || rightPointing) {
+    const drawHand = leftPointing ? leftData : rightData;
+    circleTrail.push({ x: drawHand.index.x, y: drawHand.index.y });
+    if (circleTrail.length > 100) circleTrail.shift();
+    
+    const result = detectCircle(circleTrail);
+    if (result) {
+      if (portals.length >= 4) portals.shift();
+      portals.push(new Portal(result.cx, result.cy, result.r));
+      circleTrail = [];
+      flash = 0.6;
+      audio.init();
+      audio.playPortalSound();
+      
+      for (let i = 0; i < 60; i++) {
+        const a = (i / 60) * Math.PI * 2;
+        const spd = 5 + Math.random() * 7;
+        addSpark(result.cx + Math.cos(a) * result.r, result.cy + Math.sin(a) * result.r, Math.cos(a) * spd, Math.sin(a) * spd, Math.random() * 15);
+      }
+    }
+  } else {
+    circleTrail = [];
+  }
+  
+  // Portal dismiss
+  const leftPalm = leftData && leftData.gesture === 'openPalm';
+  const rightPalm = rightData && rightData.gesture === 'openPalm';
+  
+  if (leftPalm || rightPalm) {
+    const palmPositions = [];
+    if (leftPalm) palmPositions.push(leftData.palm);
+    if (rightPalm) palmPositions.push(rightData.palm);
+    
+    palmPositions.forEach(palmPos => {
+      for (let i = portals.length - 1; i >= 0; i--) {
+        const portal = portals[i];
+        const dist = Math.hypot(palmPos.x - portal.x, palmPos.y - portal.y);
+        if (dist < portal.r * 1.15 && !portal.closing) {
+          dismissPortal(portal);
+          portal.close();
+        }
+      }
+    });
+  }
+  
+  function isPalmOverPortal(palmPos) {
+    for (let portal of portals) {
+      if (Math.hypot(palmPos.x - portal.x, palmPos.y - portal.y) < portal.r * 1.15) return true;
+    }
+    return false;
+  }
+  
+  // Shields
+  const wasLeftActive = leftShieldActive;
+  const wasRightActive = rightShieldActive;
+  
+  if (leftData && leftData.gesture === 'openPalm' && !isPalmOverPortal(leftData.palm)) {
+    const size = Math.max(140, leftData.palmSize * 2.8);
+    if (!leftMandala || leftMandala.life <= 0) leftMandala = new Mandala(leftData.palm.x, leftData.palm.y, size, true);
+    else leftMandala.update(leftData.palm.x, leftData.palm.y, size, true);
+    if (!wasLeftActive) { audio.init(); audio.playShieldSound('left'); }
+    leftShieldActive = true;
+  } else {
+    if (leftMandala && leftMandala.life > 0) leftMandala.update(leftMandala.x, leftMandala.y, leftMandala.size, false);
+    leftShieldActive = false;
+  }
+  
+  if (rightData && rightData.gesture === 'openPalm' && !isPalmOverPortal(rightData.palm)) {
+    const size = Math.max(140, rightData.palmSize * 2.8);
+    if (!rightMandala || rightMandala.life <= 0) rightMandala = new Mandala(rightData.palm.x, rightData.palm.y, size, false);
+    else rightMandala.update(rightData.palm.x, rightData.palm.y, size, true);
+    if (!wasRightActive) { audio.init(); audio.playShieldSound('right'); }
+    rightShieldActive = true;
+  } else {
+    if (rightMandala && rightMandala.life > 0) rightMandala.update(rightMandala.x, rightMandala.y, rightMandala.size, false);
+    rightShieldActive = false;
+  }
+  
+  // === ENERGY PULL - INCREASED DISTANCE (80 to 900) ===
+  pullState.active = false;
+  targetEyeIntensity = 0;
+  
+  const powerMeter = document.getElementById('powerMeter');
+  const powerFill = document.getElementById('powerFill');
+  
+  const canEnergyPull = leftData && rightData && !leftPointing && !rightPointing;
+  
+  if (canEnergyPull) {
+    const dist = Math.hypot(leftData.palm.x - rightData.palm.x, leftData.palm.y - rightData.palm.y);
+    
+    if (dist < 80) {
+      pullState.energy = 0;
+    } else if (dist < 900) {
+      pullState.active = true;
+      pullState.distance = dist;
+      pullState.energy = Math.min(1, (dist - 80) / 700);
+      pullState.peakEnergy = Math.max(pullState.peakEnergy, pullState.energy);
+      
+      targetEyeIntensity = pullState.energy;
+      
+      powerMeter.classList.add('active');
+      powerFill.style.width = (pullState.energy * 100) + '%';
+      
+      if (!pullState.wasActive) {
+        audio.init();
+        audio.startEnergySound();
+      }
+      audio.updateEnergySound(pullState.energy);
+      
+      pullState.wasActive = true;
+    } else {
+      if (pullState.wasActive) audio.stopEnergySound();
+      
+      if (pullState.energy > 0.2 && (leftVel > 15 || rightVel > 15)) {
+        const cx = (leftData.palm.x + rightData.palm.x) / 2;
+        const cy = (leftData.palm.y + rightData.palm.y) / 2;
+        triggerExplosion(cx, cy, pullState.energy);
+        targetEyeIntensity = 1;
+        setTimeout(() => { targetEyeIntensity = 0; }, 150);
+      }
+      pullState.energy = 0;
+      pullState.peakEnergy = 0;
+      pullState.wasActive = false;
+      powerMeter.classList.remove('active');
+    }
+  } else {
+    if (pullState.wasActive) {
+      audio.stopEnergySound();
+      pullState.wasActive = false;
+    }
+    pullState.peakEnergy *= 0.95;
+    targetEyeIntensity = pullState.peakEnergy * 0.2;
+    powerMeter.classList.remove('active');
+  }
+  
+  // Fist blast
+  if (!pullState.active) {
+    if (leftData && leftData.gesture === 'fist' && leftVel > 35) {
+      triggerExplosion(leftData.palm.x, leftData.palm.y, 0.65);
+    }
+    if (rightData && rightData.gesture === 'fist' && rightVel > 35) {
+      triggerExplosion(rightData.palm.x, rightData.palm.y, 0.65);
+    }
+  }
+}
+
+// === ANIMATION LOOP ===
+let lastTime = 0;
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+  
+  frames++;
+  if (now - lastSec >= 1000) {
+    document.getElementById('fps').textContent = frames;
+    frames = 0;
+    lastSec = now;
+  }
+  
+  processHands();
+  update(dt);
+  render();
+  
+  requestAnimationFrame(loop);
+}
+
+// === MEDIAPIPE ===
+const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.75, minTrackingConfidence: 0.75 });
+hands.onResults(res => {
+  leftHand = null; rightHand = null;
+  if (res.multiHandLandmarks && res.multiHandedness) {
+    for (let i = 0; i < res.multiHandLandmarks.length; i++) {
+      const label = res.multiHandedness[i].label;
+      if (label === 'Right') leftHand = res.multiHandLandmarks[i];
+      else rightHand = res.multiHandLandmarks[i];
+    }
+  }
+});
+
+const faceMesh = new FaceMesh({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+faceMesh.onResults(res => {
+  if (res.multiFaceLandmarks && res.multiFaceLandmarks.length > 0) {
+    faceData = res.multiFaceLandmarks[0];
+    const eyes = getDetailedEyeData(faceData);
+    leftEyeData = eyes.left; rightEyeData = eyes.right;
+  } else { faceData = null; leftEyeData = null; rightEyeData = null; }
+});
+
+const camera = new Camera(cam, {
+  onFrame: async () => { await hands.send({ image: cam }); await faceMesh.send({ image: cam }); },
+  width: 1280, height: 720
+});
+
+camera.start().then(() => {
+  setTimeout(() => { document.getElementById('loader').classList.add('hide'); requestAnimationFrame(loop); }, 2000);
+});
+</script>
 </body>
 </html>
